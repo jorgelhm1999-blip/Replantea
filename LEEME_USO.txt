@@ -1,4 +1,4 @@
-REPLANTEA 0.2.0 — WINDOWS x64
+REPLANTEA 0.3.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -7,15 +7,24 @@ No necesita conexión a Internet para procesar sus archivos.
 
 Abra un DWG o DXF con ejes planos XY. Seleccione las entidades y configure nombres, sentido y PK inicial.
 Seleccione una fila para resaltar ese eje en naranja en el mapa.
-Ordene las filas con Mayús + flecha arriba/abajo o los botones Subir/Bajar.
+Una flecha sobre el eje indica el sentido creciente de replanteo.
+Ordene las filas con Mayús + flecha arriba/abajo o los botones Subir/Bajar,
+o arrastre una fila hasta la posición deseada. La línea naranja indica dónde se insertará.
+También puede arrastrar un conjunto de filas previamente seleccionadas.
 La numeración sigue ese orden y el sentido de cada eje. Los encuentros compartidos
 conservan el primer número. Cambiar el orden renumera y reinicia las etiquetas movidas.
 Seleccione la escala de salida 1:1000 o 1:2000 antes de exportar.
 
-1:2000: vértices ARIAL 3,5 m; PK y RECTA/CURVA Standard 1,5 m; marcas cada 10 m.
-1:1000: vértices ARIAL 1,75 m; PK y RECTA/CURVA Standard 2 m; marcas cada 20 m.
+1:2000: vértices ARIAL 3,5 m; PK y RECTA/R ARIAL 1,5 m; marcas cada 10 m.
+1:1000: vértices ARIAL 1,75 m; PK y RECTA/R ARIAL 2 m; marcas cada 20 m.
 Las marcas tienen 3 m de longitud total (1,5 m a cada lado), en ambas escalas.
-PK con formato 0+000.000. Radios como cotas radiales editables, flecha cerrada
+PK con formato 0+000.000, rotulados cada 100 m en ambas escalas.
+En los encuentros recta/curva, marca perpendicular con brazos de 3,5 m y 32,646 m.
+Ambas longitudes son editables en la interfaz. En el extremo figura el PK exacto
+de tangencia, aunque no sea múltiplo de 100. RECTA y R=XXX.XXX se alinean con
+la marca, a cada lado según el elemento de entrada/salida. Los rótulos de centro
+quedan junto al centro geométrico, sin línea de unión. Todos los textos generados
+usan ARIAL. Las cotas radiales conservan la línea propia de la cota. Radios como cotas radiales editables, flecha cerrada
 rellena de 0,75 m y marca de centro 2,5 m. Anotaciones ACI 9 / RGB 192,192,192;
 etiquetas y puntos de vértices RGB 0,0,250. Estas alturas se expresan en unidades
 modelo (metros). Las cifras responden a los perfiles del proyecto.

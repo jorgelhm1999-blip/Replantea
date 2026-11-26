@@ -1,4 +1,4 @@
-"""Replantea 0.2: replanteo exacto de rectas y arcos planos; no modifica ejes."""
+"""Replantea 0.3: replanteo exacto de rectas y arcos planos; no modifica ejes."""
 from dataclasses import dataclass
 from pathlib import Path
 import math, json, csv, tempfile
@@ -207,8 +207,8 @@ def write_csv(path,headers,rows):
         w=csv.writer(f,delimiter=';');w.writerow(headers);w.writerows(rows)
 
 PROFILES={
-    '1:2000':dict(vertex_height=3.5,pk_height=1.5,geometry_height=1.5,tick_interval=10.,tick_length=3.),
-    '1:1000':dict(vertex_height=1.75,pk_height=2.,geometry_height=2.,tick_interval=20.,tick_length=3.),
+    '1:2000':dict(vertex_height=3.5,pk_height=1.5,geometry_height=1.5,tick_interval=10.,tick_length=3.,pk_interval=100.),
+    '1:1000':dict(vertex_height=1.75,pk_height=2.,geometry_height=2.,tick_interval=20.,tick_length=3.,pk_interval=100.),
 }
 GRAY_RGB=0xC0C0C0
 VERTEX_RGB=0x0000FA
@@ -228,22 +228,54 @@ def move_axes(axes,handles,direction):
         j=i+direction
         if axes[i].handle in handles and axes[j].handle not in handles:axes[i],axes[j]=axes[j],axes[i]
 
+def place_axes(axes,handles,slot):
+    """Insertar filas seleccionadas en un límite de la lista original (0..n)."""
+    selected=set(handles);slot=max(0,min(len(axes),int(slot)))
+    moving=[a for a in axes if a.handle in selected]
+    insert=sum(a.handle not in selected for a in axes[:slot])
+    remaining=[a for a in axes if a.handle not in selected]
+    axes[:]=remaining[:insert]+moving+remaining[insert:]
+
+def direction_marker(axis):
+    station=axis.length*.5
+    for seg in axis.segments:
+        if station<=seg.length:return seg.point(station/seg.length),seg.tangent(station/seg.length)
+        station-=seg.length
+    return axis.segments[-1].b,axis.segments[-1].tangent(1)
+
+def readable_angle(vector):
+    angle=math.degrees(math.atan2(vector[1],vector[0]))
+    return (angle+90)%180-90
+
+def transition_marks(axis,short_arm=3.5,long_arm=32.646):
+    """Cambios recta/arco. Normal derecha según el sentido creciente de PK."""
+    pk=axis.pk0
+    for j,after in enumerate(axis.segments):
+        if j or axis.closed:
+            before=axis.segments[j-1]
+            if (before.center is None)!=(after.center is None) and dist(before.b,after.a)<EPS*5:
+                tangent=after.tangent(0) if after.center else before.tangent(1)
+                normal=mul(left(tangent),-1);point=after.a
+                yield dict(p=point,tangent=tangent,normal=normal,start=add(point,mul(normal,-short_arm)),end=add(point,mul(normal,long_arm)),pk=pk,
+                    before='RECTA' if before.center is None else f'R={before.radius:.3f}',after='RECTA' if after.center is None else f'R={after.radius:.3f}')
+        pk+=after.length
+
 def label_height(loc,profile):
     return profile['vertex_height'] if any(x.startswith('V') for x in loc['labels']) else profile['geometry_height']
 
-def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale='1:2000'):
+def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale='1:2000',transition_short=3.5,transition_long=32.646):
+    if not all(math.isfinite(v) and v>0 for v in (transition_short,transition_long)):raise ValueError('Los brazos de la marca de transición deben ser positivos.')
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     import copy
     d=copy.deepcopy(doc);m=d.modelspace();profile=profile_for(scale);h=profile['vertex_height'];gh=profile['geometry_height']
-    layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS']
+    layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS','RP_TRANSICIONES']
     for layer in layers:
         if layer not in d.layers:d.layers.new(layer)
         l=d.layers.get(layer);l.dxf.color=5 if layer=='RP_VERTICES' else 9;l.dxf.true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB
     if 'ARIAL' not in d.styles:d.styles.new('ARIAL',dxfattribs={'font':'arial.ttf'})
     else:d.styles.get('ARIAL').dxf.font='arial.ttf'
-    d.styles.get('Standard').dxf.font='txt.shx'
     def attrs(layer):return dict(layer=layer,color=5 if layer=='RP_VERTICES' else 9,true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
-    def text(t,p,layer='RP_TEXTOS',height=None,angle=0,align=None,style='Standard'):
+    def text(t,p,layer='RP_TEXTOS',height=None,angle=0,align=None,style='ARIAL'):
         e=m.add_text(t,dxfattribs={**attrs(layer),'height':gh if height is None else height,'style':style,'rotation':angle})
         e.set_placement(p,align=align or TextEntityAlignment.LEFT);return e
     def line(a,b,layer='RP_RADIOS'):return m.add_line(a,b,dxfattribs=attrs(layer))
@@ -253,11 +285,12 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
         layer='RP_VERTICES' if vertex else ('RP_CENTROS' if center else 'RP_PUNTOS')
         size=label_height(loc,profile);m.add_circle(p,size*.20,dxfattribs=attrs(layer));m.add_point(p,dxfattribs=attrs(layer))
         label='='.join(labels);q=positions[label]
-        text(label,q,layer=layer,height=size,style='ARIAL' if vertex else 'Standard');line(p,q,layer)
+        text(label,q,layer=layer,height=size)
+        if not center:line(p,q,layer)
     # Cotas radiales asociadas a cada arco: DIMENSION de tipo radio, sin explotar.
     dimname='RP_RADIAL_'+scale.replace(':','_')
     if dimname not in d.dimstyles:d.dimstyles.new(dimname)
-    d.dimstyles.get(dimname).update_dxf_attribs(dict(dimscale=1.,dimlfac=1.,dimtxt=gh,dimasz=.75,dimcen=2.5,dimclrd=9,dimclre=9,dimclrt=9,dimtxsty='Standard',dimdec=3,dimpost='<>',dimtad=0))
+    d.dimstyles.get(dimname).update_dxf_attribs(dict(dimscale=1.,dimlfac=1.,dimtxt=gh,dimasz=.75,dimcen=2.5,dimclrd=9,dimclre=9,dimclrt=9,dimtxsty='ARIAL',dimdec=3,dimpost='<>',dimtad=0))
     for c in result.curves:
         seg=c['s'];mid=seg.point(.5);radial=unit(sub(mid,seg.center));q=add(mid,mul(radial,4*gh))
         dim=m.add_radius_dim(center=seg.center,radius=seg.radius,location=q,dimstyle=dimname,dxfattribs=attrs('RP_RADIOS'))
@@ -273,9 +306,6 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
         pk=axis.pk0;text(axis.name.upper(),add(axis.segments[0].a,(0,-5*gh)),'RP_EJES_NOMBRES',gh)
         for j,seg in enumerate(axis.segments):
             segrows.append([axis.name,j+1,'ARCO' if seg.center else 'RECTA',f'{pk:.6f}',f'{pk+seg.length:.6f}',f'{seg.length:.6f}', '' if not seg.center else f'{seg.radius:.6f}',f'{az(seg.tangent(0)):.6f}',f'{az(seg.tangent(1)):.6f}'])
-            mid=seg.point(.5);tangent=seg.tangent(.5);angle=math.degrees(math.atan2(tangent[1],tangent[0]));angle=angle+180 if angle>90 or angle<-90 else angle
-            label='RECTA' if seg.center is None else f'CURVA R={seg.radius:.3f}'
-            text(label,add(mid,mul(left(tangent),3*gh)),'RP_ELEMENTOS',gh,angle)
             # Marcas de longitud fija, independientes de la altura de los textos.
             step=profile['tick_interval'];first=math.ceil((pk-EPS)/step);last=math.floor((pk+seg.length+EPS)/step)
             for k in range(first,last+1):
@@ -284,8 +314,21 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
                 if j>0 and abs(value-pk)<EPS:continue
                 t=max(0.,min(1.,(value-pk)/seg.length));p=seg.point(t);normal=left(seg.tangent(t));half=profile['tick_length']/2
                 line(add(p,mul(normal,-half)),add(p,mul(normal,half)),'RP_PK')
-                text(format_pk(value),add(p,mul(normal,-3*profile['pk_height'])),'RP_PK',profile['pk_height'])
+                if abs(value/profile['pk_interval']-round(value/profile['pk_interval']))<EPS:
+                    text(format_pk(value),add(p,mul(normal,-3*profile['pk_height'])),'RP_PK',profile['pk_height'])
             pk+=seg.length
+        for mark in transition_marks(axis,transition_short,transition_long):
+            normal=mark['normal'];tangent=mark['tangent'];angle=readable_angle(normal)
+            line(mark['start'],mark['end'],'RP_TRANSICIONES')
+            # El texto de cada elemento ocupa su propio lado del límite, siguiendo el sentido del eje.
+            middle=add(mark['p'],mul(normal,transition_long*.5));offset=gh*1.25
+            for caption,side in [(mark['before'],-1),(mark['after'],1)]:
+                text(caption,add(middle,mul(tangent,side*offset)),'RP_TRANSICIONES',gh,angle,TextEntityAlignment.MIDDLE_CENTER)
+            end=add(mark['end'],mul(normal,profile['pk_height']))
+            # Mantener el PK fuera del brazo largo también cuando la lectura gira 180 grados.
+            direction=(math.cos(math.radians(angle)),math.sin(math.radians(angle)))
+            alignment=TextEntityAlignment.MIDDLE_LEFT if dot(direction,normal)>0 else TextEntityAlignment.MIDDLE_RIGHT
+            text(format_pk(mark['pk']),end,'RP_TRANSICIONES',profile['pk_height'],angle,alignment)
     # Tablas de coordenadas en la derecha del trazado, con el formato de tres columnas de la referencia.
     ps=[s.point(t) for a in result.axes for s in a.segments for t in [0,.25,.5,.75,1]]
     xmin=min(p[0] for p in ps);xmax=max(p[0] for p in ps);ymax=max(p[1] for p in ps)
@@ -308,10 +351,10 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     write_csv(out/'Curvas.csv',['CURVA','EJE','VERTICE','TE','TS','CENTRO_X','CENTRO_Y','RADIO','DESARROLLO','GIRO_g','TANGENTE','PK_TE','PK_TS'],[[f"C{c['id']}",c['eje'],c['vertex'],f"TE{c['id']}",f"TS{c['id']}",*c['center'],c['r'],c['length'],c['angle_g'],c['tangent'],c['pk0'],c['pk1']] for c in result.curves])
     write_csv(out/'Elementos.csv',['EJE','ELEMENTO','TIPO','PK_INICIO','PK_FIN','LONGITUD','RADIO','AZIMUT_ENTRADA_g','AZIMUT_SALIDA_g'],segrows)
     config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed) for i,a in enumerate(result.axes)]
-    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250]),indent=2),encoding='utf-8')
+    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250]),indent=2),encoding='utf-8')
     (out/'Ejes.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
     summary=dict(ejes=len(result.axes),curvas=len(result.curves),vertices=len(result.groups['VÉRTICES']),tangencias=len(result.groups['TANGENTES']),incidencias=len(result.warnings))
-    (out/'Revision.txt').write_text('REPLANTEA 0.2 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente.\n',encoding='utf-8')
+    (out/'Revision.txt').write_text('REPLANTEA 0.3 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente.\n',encoding='utf-8')
     return dest,summary
 
 def label_layout(result,h=1.5,profile=None):
@@ -319,6 +362,9 @@ def label_layout(result,h=1.5,profile=None):
     for loc in result.locations:
         size=label_height(loc,profile) if profile else h
         p=loc['p'];label='='.join(loc['labels']);w=len(label)*size*.65
+        if all(x.startswith('C') for x in loc['labels']):
+            # Sin directriz: mantener el rótulo junto al centro geométrico.
+            positions[label]=add(p,(size*.9,size*.9));continue
         for k in range(80):
             ang=(k%8)*math.pi/4;rr=size*(2+3*(k//8));q=add(p,(rr*math.cos(ang),rr*math.sin(ang)))
             box=(q[0],q[1],q[0]+w,q[1]+size*1.3)

@@ -19,9 +19,9 @@ Se activa al actualizar el código en `main` o manualmente con **Run workflow**.
 
 ## Uso
 
-Seleccione una fila para resaltar el eje en el mapa. Ordene los ejes con **Mayús + ↑ / ↓** o los botones Subir/Bajar. La numeración sigue el orden de las filas y el sentido del eje, incluidos los encuentros interiores. Los puntos compartidos conservan su primer número. Cambiar el orden reinicia las posiciones de etiquetas recolocadas.
+Seleccione una fila para resaltar el eje en el mapa. Ordene los ejes con **Mayús + ↑ / ↓** o los botones Subir/Bajar, o arrastre filas hasta la línea naranja de inserción. La flecha del eje resaltado muestra el sentido creciente. La numeración sigue el orden de las filas y el sentido del eje, incluidos los encuentros interiores. Los puntos compartidos conservan su primer número. Cambiar el orden reinicia las posiciones de etiquetas recolocadas.
 
-Seleccione **1:1000** o **1:2000** en la interfaz. Los perfiles fijan alturas, estilos, intervalo de PK y marcas de 3 m; consulte `LEEME_USO.txt`. Los radios se exportan como DIMENSION radiales editables. Las anotaciones usan ACI 9 y RGB 192,192,192; los vértices usan ARIAL y RGB 0,0,250.
+Seleccione **1:1000** o **1:2000** en la interfaz. Los perfiles fijan alturas y marcas de 3 m. Los PK se rotulan cada 100 m en ambas escalas y todos los textos generados usan ARIAL; consulte `LEEME_USO.txt`. Los radios se exportan como DIMENSION radiales editables. Los rótulos de centro quedan próximos al centro, sin directriz. En cada cambio recta/curva se dibuja una marca perpendicular con RECTA y R=XXX.XXX a ambos lados, alineados con ella, y el PK exacto en el extremo. Los brazos de 3,5 m y 32,646 m se pueden ajustar en la interfaz. Las anotaciones usan ACI 9 y RGB 192,192,192; los vértices usan ARIAL y RGB 0,0,250.
 
 Configure nombre y PK inicial, revise el sentido y calcule. Puede mover etiquetas y exportar un DXF nuevo con puntos, tangencias, centros, radios, PK y cuadros X/Y. Incluye CSV de coordenadas, curvas y elementos e informe de incidencias. Las tablas son entidades LINE/TEXT editables.
 
