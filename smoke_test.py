@@ -4,7 +4,7 @@ import tempfile,sys,math,json
 
 def run(gui=False,require_frozen=False):
     import ezdwg,ezdxf
-    from motor import load,Result,export,dist
+    from motor import load,Result,export,dist,Axis,Segment,PROFILES
     if require_frozen and not getattr(sys,'frozen',False):raise RuntimeError('La prueba debe ejecutarse dentro del .exe compilado.')
     with tempfile.TemporaryDirectory(prefix='replantea_test_') as temp:
         temp=Path(temp);doc=ezdxf.new('R2010');doc.units=6
@@ -25,6 +25,9 @@ def run(gui=False,require_frozen=False):
         rr=Result(a2,w2)
         assert len(rr.curves)==1 and abs(rr.curves[0]['r']-10)<1e-6
         export(d2,rr,temp/'salida_dwg')
+        for scale in PROFILES:
+            target,_=export(d,result,temp/scale.replace(':','_'),scale=scale)
+            assert len(list(ezdxf.readfile(target).modelspace().query('DIMENSION')))==1
         gui_ok=False
         if gui:
             import tkinter as tk
@@ -34,6 +37,21 @@ def run(gui=False,require_frozen=False):
                 root.withdraw();app=App(root);app.doc=d;app.axes=axes;app.warnings=w;app.refresh();app.calculate();root.update_idletasks();root.update()
                 assert app.result is not None and len(app.result.curves)==1
                 assert app.canvas.find_all()
+                other=Axis('ui-second','B','0',[Segment((140,200),(180,200))])
+                app.axes.append(other);app.refresh();app.calculate()
+                app.tree.selection_set(other.handle);app.tree.focus(other.handle);root.update()
+                assert app.canvas.find_withtag('selected_axis')
+                camera=(app.origin,app.scale);app.reorder(-1);root.update()
+                assert app.axes[0] is other and app.result.axes[0] is other
+                assert app.tree.get_children()[0]==other.handle
+                assert app.tree.selection()==(other.handle,)
+                assert camera==(app.origin,app.scale)
+                assert app.result.vertices[0]['x']==140
+                assert app.tree.bind('<Shift-Up>') and app.tree.bind('<Shift-Down>')
+                app.drawing_scale.set('1:1000');app.change_profile();root.update()
+                assert app.export_scale=='1:1000' and app.profile['vertex_height']==1.75
+                app.reverse();assert app.result.vertices[0]['x']==180
+                app.reorder(1);assert app.axes[-1] is other
                 gui_ok=True
             finally:root.destroy()
-        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,ezdxf=ezdxf.__version__,summary=summary)
+        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',scale_profiles='ok',radial_dimensions='ok',ezdxf=ezdxf.__version__,summary=summary)

@@ -3,31 +3,37 @@ import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
 from pathlib import Path
 import math,threading,queue,traceback,json
-from motor import load,Result,export,label_layout,dist
+from motor import load,Result,export,label_layout,dist,profile_for,PROFILES,move_axes
 
 class App:
     def __init__(self,root):
-        self.root=root;root.title('Replantea 0.1 · Prueba de replanteo');root.geometry('1380x850')
+        self.root=root;root.title('Replantea 0.2.0');root.geometry('1380x850')
         self.doc=None;self.axes=[];self.warnings=[];self.result=None;self.offsets={};self.scale=1;self.origin=(0,0);self.queue=queue.Queue();self.busy=False
         self.status=tk.StringVar(value='Abra un DWG o DXF. No se modificará el archivo original.')
-        self.height=tk.StringVar(value='1.5');self.step=tk.StringVar(value='100');self.centers=tk.BooleanVar(value=False)
+        self.drawing_scale=tk.StringVar(value='1:2000');self.profile=profile_for('1:2000');self.centers=tk.BooleanVar(value=False)
         top=ttk.Frame(root,padding=10);top.pack(fill='x')
         ttk.Button(top,text='Abrir DWG / DXF',command=self.open).pack(side='left')
-        ttk.Label(top,text='  Texto (m)').pack(side='left');ttk.Entry(top,textvariable=self.height,width=6).pack(side='left')
-        ttk.Label(top,text='  Intervalo PK (m)').pack(side='left');ttk.Entry(top,textvariable=self.step,width=6).pack(side='left')
+        ttk.Label(top,text='  Escala de salida ').pack(side='left')
+        self.scale_combo=ttk.Combobox(top,textvariable=self.drawing_scale,values=list(PROFILES),state='readonly',width=9)
+        self.scale_combo.pack(side='left');self.scale_combo.bind('<<ComboboxSelected>>',self.change_profile)
         ttk.Button(top,text='Calcular / actualizar',command=self.calculate).pack(side='left',padx=10)
         ttk.Button(top,text='Exportar DXF y tablas',command=self.save).pack(side='left',padx=10)
         ttk.Checkbutton(top,text='Mostrar centros',variable=self.centers,command=self.draw).pack(side='left')
         ttk.Button(top,text='Encuadrar',command=self.fit).pack(side='right')
+        self.profile_note=tk.StringVar();ttk.Label(root,textvariable=self.profile_note,padding=(10,0,10,6)).pack(fill='x');self.update_profile_note()
         pan=ttk.Panedwindow(root,orient='horizontal');pan.pack(fill='both',expand=True,padx=10)
         left=ttk.Frame(pan);right=ttk.Frame(pan);pan.add(left,weight=1);pan.add(right,weight=3)
-        ttk.Label(left,text='Ejes · Doble clic: nombre, PK o selección').pack(anchor='w')
-        self.tree=ttk.Treeview(left,columns=('on','name','pk','long','arcs'),show='headings',selectmode='extended',height=15)
-        for c,t,w in [('on','Usar',45),('name','Eje',85),('pk','PK inicial',75),('long','Longitud',95),('arcs','Arcos',50)]:self.tree.heading(c,text=t);self.tree.column(c,width=w,anchor='center')
-        self.tree.pack(fill='both',expand=True);self.tree.bind('<Double-1>',self.edit)
+        ttk.Label(left,text='Ejes · Seleccionar: resaltar · Mayús + ↑ / ↓: ordenar').pack(anchor='w')
+        self.tree=ttk.Treeview(left,columns=('order','on','name','pk','long','arcs'),show='headings',selectmode='extended',height=15)
+        for c,t,w in [('order','Orden',42),('on','Usar',45),('name','Eje',85),('pk','PK inicial',75),('long','Longitud',95),('arcs','Arcos',50)]:self.tree.heading(c,text=t);self.tree.column(c,width=w,anchor='center')
+        self.tree.pack(fill='both',expand=True);self.tree.bind('<Double-1>',self.edit);self.tree.bind('<<TreeviewSelect>>',lambda e:self.draw())
+        self.tree.bind('<Shift-Up>',lambda e:self.reorder(-1));self.tree.bind('<Shift-Down>',lambda e:self.reorder(1))
         controls=ttk.Frame(left);controls.pack(fill='x',pady=5)
         ttk.Button(controls,text='Activar / desactivar',command=self.toggle).pack(side='left')
         ttk.Button(controls,text='Invertir sentido',command=self.reverse).pack(side='left',padx=5)
+        ttk.Button(controls,text='↑ Subir',command=lambda:self.reorder(-1)).pack(side='left',padx=2)
+        ttk.Button(controls,text='↓ Bajar',command=lambda:self.reorder(1)).pack(side='left',padx=2)
+        ttk.Label(left,text='Doble clic: activar, editar nombre o PK. El orden y el sentido determinan la numeración.',wraplength=540).pack(anchor='w')
         ttk.Label(left,text='Incidencias y criterios de cálculo').pack(anchor='w')
         self.log=tk.Text(left,height=14,wrap='word',font=('Segoe UI',9));self.log.pack(fill='both',expand=True)
         self.canvas=tk.Canvas(right,bg='#f8fafc',highlightthickness=0);self.canvas.pack(fill='both',expand=True)
@@ -58,20 +64,38 @@ class App:
         def done(val):
             self.doc,self.axes,self.warnings=val;self.result=None;self.offsets={};self.refresh();self.calculate();self.fit()
         self.run(lambda:load(p),done)
+    def update_profile_note(self):
+        p=profile_for(self.drawing_scale.get())
+        self.profile_note.set(f"Vértices ARIAL: {p['vertex_height']:g} m · PK / RECTA / CURVA Standard: {p['pk_height']:g} m · Marcas cada {p['tick_interval']:g} m, longitud total 3 m")
+    def change_profile(self,event=None):
+        if self.busy:
+            self.drawing_scale.set(getattr(self,'export_scale','1:2000'));return
+        self.profile=profile_for(self.drawing_scale.get());self.update_profile_note();self.offsets={}
+        if self.axes:self.calculate(fit_view=False)
+        else:self.draw()
     def refresh(self):
+        selected=self.tree.selection();focus=self.tree.focus()
         self.tree.delete(*self.tree.get_children())
-        for i,a in enumerate(self.axes):self.tree.insert('', 'end',iid=str(i),values=('Sí' if a.selected else 'No',a.name,f'{a.pk0:.3f}',f'{a.length:.3f}',sum(s.center is not None for s in a.segments)))
+        for i,a in enumerate(self.axes):self.tree.insert('', 'end',iid=a.handle,values=(i+1,'Sí' if a.selected else 'No',a.name,f'{a.pk0:.3f}',f'{a.length:.3f}',sum(s.center is not None for s in a.segments)))
+        self.tree.selection_set([h for h in selected if self.tree.exists(h)])
+        if self.tree.exists(focus):self.tree.focus(focus)
+    def axis(self,handle):return next(a for a in self.axes if a.handle==handle)
+    def reorder(self,direction):
+        if self.busy or not self.tree.selection():return 'break'
+        selected=self.tree.selection();move_axes(self.axes,selected,direction);self.refresh()
+        focus=self.tree.focus() or selected[0];self.tree.see(focus)
+        self.calculate(fit_view=False);return 'break'
     def edit(self,e):
         row=self.tree.identify_row(e.y);col=self.tree.identify_column(e.x)
         if not row or self.busy:return
-        a=self.axes[int(row)]
-        if col=='#1':a.selected=not a.selected;self.result=None;self.offsets={};self.refresh();self.draw();return
-        if col not in ('#2','#3'):return
-        box=self.tree.bbox(row,col);entry=ttk.Entry(self.tree);entry.place(x=box[0],y=box[1],width=box[2],height=box[3]);entry.insert(0,a.name if col=='#2' else str(a.pk0));entry.select_range(0,'end');entry.focus_set()
+        a=self.axis(row)
+        if col=='#2':a.selected=not a.selected;self.result=None;self.offsets={};self.refresh();self.draw();return
+        if col not in ('#3','#4'):return
+        box=self.tree.bbox(row,col);entry=ttk.Entry(self.tree);entry.place(x=box[0],y=box[1],width=box[2],height=box[3]);entry.insert(0,a.name if col=='#3' else str(a.pk0));entry.select_range(0,'end');entry.focus_set()
         def accept(event=None):
             try:
                 value=entry.get().strip()
-                if col=='#2':
+                if col=='#3':
                     if not value or any(x is not a and x.name==value for x in self.axes):raise ValueError('Nombre vacío o duplicado.')
                     a.name=value
                 else:
@@ -83,22 +107,22 @@ class App:
         entry.bind('<Return>',accept);entry.bind('<Escape>',lambda e:entry.destroy())
     def toggle(self):
         if self.busy:return
-        for i in self.tree.selection():self.axes[int(i)].selected=not self.axes[int(i)].selected
+        for handle in self.tree.selection():self.axis(handle).selected=not self.axis(handle).selected
         self.result=None;self.offsets={};self.refresh();self.draw()
     def reverse(self):
         if self.busy:return
-        for i in self.tree.selection():self.axes[int(i)].reverse()
-        self.refresh();self.calculate()
-    def calculate(self):
+        for handle in self.tree.selection():self.axis(handle).reverse()
+        self.refresh();self.calculate(fit_view=False)
+    def calculate(self,fit_view=True):
         if self.busy or not self.axes:return
         try:
-            h=float(self.height.get().replace(',','.'));step=float(self.step.get().replace(',','.'))
-            if not math.isfinite(h) or not math.isfinite(step) or h<=0 or step<0:raise ValueError('Altura positiva; intervalo PK no negativo (0 desactiva los PK).')
             if not any(a.selected for a in self.axes):raise ValueError('Seleccione al menos un eje.')
-            self.result=Result(self.axes,self.warnings);self.offsets={};self.h=h;self.pkstep=step
-            self.log.delete('1.0','end');self.log.insert('end','PK independiente por entidad. Numeración provisional. No se unen ejes ni se cierran bucles.\n\n'+'\n'.join(self.result.warnings))
-            self.status.set(f'{len(self.result.axes)} ejes · {len(self.result.curves)} curvas · {len(self.result.rows)} coordenadas · {len(self.result.warnings)} incidencias')
-            self.fit()
+            self.profile=profile_for(self.drawing_scale.get());self.export_scale=self.drawing_scale.get()
+            self.result=Result(self.axes,self.warnings);self.offsets={}
+            self.log.delete('1.0','end');self.log.insert('end','Numeración según orden de filas y sentido de cada eje. Los puntos compartidos conservan el primer número asignado. PK independiente por entidad. No se unen ejes ni se cierran bucles.\n\n'+'\n'.join(self.result.warnings))
+            self.status.set(f'{len(self.result.axes)} ejes · {len(self.result.curves)} curvas · {len(self.result.rows)} coordenadas · {len(self.result.warnings)} incidencias · Escala {self.export_scale}')
+            if fit_view:self.fit()
+            else:self.draw()
         except Exception as ex:messagebox.showerror('Cálculo',str(ex))
     def xy(self,p):return ((p[0]-self.origin[0])*self.scale,(self.origin[1]-p[1])*self.scale)
     def world(self,x,y):return (x/self.scale+self.origin[0],self.origin[1]-y/self.scale)
@@ -111,21 +135,24 @@ class App:
         self.scale=.85*min(w/max(x1-x0,1),h/max(y1-y0,1));self.origin=((x0+x1)/2-w/(2*self.scale),(y0+y1)/2+h/(2*self.scale));self.draw()
     def draw(self):
         self.canvas.delete('all');self.text_items={}
-        axes=self.result.axes if self.result else self.axes
-        for a in axes:
-            if not a.selected:continue
+        selected=set(self.tree.selection())
+        # Los ejes seleccionados se trazan al final, para que destaquen en los cruces.
+        for a in sorted(self.axes,key=lambda a:a.handle in selected):
+            active=a.handle in selected
+            if not a.selected and not active:continue
             for s in a.segments:
                 n=max(2,int(abs(s.sweep)*40)) if s.center else 2;points=[self.xy(s.point(k/(n-1))) for k in range(n)]
-                self.canvas.create_line(*[v for p in points for v in p],fill='#1e293b',width=2)
-            x,y=self.xy(a.segments[0].a);self.canvas.create_text(x,y+16,text=a.name,fill='#9a6700',anchor='nw')
+                self.canvas.create_line(*[v for p in points for v in p],fill='#f97316' if active else '#64748b',width=5 if active else 2,tags=('selected_axis' if active else 'axis',),dash=() if a.selected else (6,3))
+            x,y=self.xy(a.segments[0].a);self.canvas.create_text(x,y+16,text=a.name,fill='#ea580c' if active else '#9a6700',anchor='nw',font=('Arial',10,'bold' if active else 'normal'))
         if self.result:
-            positions=label_layout(self.result,self.h);positions.update(self.offsets)
+            positions=label_layout(self.result,profile=self.profile);positions.update(self.offsets)
             for loc in self.result.locations:
                 if not self.centers.get() and all(x.startswith('C') for x in loc['labels']):continue
+                vertex=any(x.startswith('V') for x in loc['labels']);color='#0000fa' if vertex else '#999999'
                 key='='.join(loc['labels']);p=self.xy(loc['p']);q=self.xy(positions[key]);r=2.5
-                self.canvas.create_oval(p[0]-r,p[1]-r,p[0]+r,p[1]+r,outline='#2563eb')
-                self.canvas.create_line(*p,*q,fill='#94a3b8')
-                item=self.canvas.create_text(*q,text=key,anchor='sw',font=('Segoe UI',9),fill='#1d4ed8');self.text_items[item]=key
+                self.canvas.create_oval(p[0]-r,p[1]-r,p[0]+r,p[1]+r,outline=color)
+                self.canvas.create_line(*p,*q,fill=color)
+                item=self.canvas.create_text(*q,text=key,anchor='sw',font=('Arial' if vertex else 'Segoe UI',10 if vertex else 9),fill=color);self.text_items[item]=key
     def zoom(self,e,factor=None):
         if not self.axes:return
         f=factor or (1.2 if e.delta>0 else 1/1.2);p=self.world(e.x,e.y);self.scale=max(.0001,min(10000,self.scale*f));self.origin=(p[0]-e.x/self.scale,p[1]+e.y/self.scale);self.draw()
@@ -142,17 +169,14 @@ class App:
         if self.busy:return
         # Recalcular antes de exportar si han cambiado ejes, nombres o PK.
         if not self.result:messagebox.showinfo('Exportación','Calcule primero el replanteo.');return
-        try:
-            if float(self.height.get().replace(',','.'))!=self.h or float(self.step.get().replace(',','.'))!=self.pkstep:
-                messagebox.showinfo('Exportación','Han cambiado la altura o el intervalo. Pulse Calcular / actualizar antes de exportar.');return
-        except ValueError:
-            messagebox.showerror('Exportación','Altura o intervalo no válidos.');return
+        if self.drawing_scale.get()!=self.export_scale:
+            messagebox.showinfo('Exportación','Actualice el cálculo con la escala seleccionada.');return
         folder=filedialog.askdirectory(title='Carpeta de salida')
         if not folder:return
         output=Path(folder)/'Replantea_salida'
         if output.exists() and not messagebox.askyesno('Archivos existentes','Se sustituirán los archivos de Replantea_salida. ¿Continuar?'):return
         def done(val):self.status.set('Exportado: '+str(val[0]));messagebox.showinfo('Exportación terminada',str(val[0])+'\n\nRevise las incidencias y las etiquetas en CAD.')
-        self.run(lambda:export(self.doc,self.result,output,self.h,self.pkstep,self.offsets),done)
+        self.run(lambda:export(self.doc,self.result,output,label_overrides=self.offsets,scale=self.export_scale),done)
 
 if __name__=='__main__':
     root=tk.Tk();App(root);root.mainloop()

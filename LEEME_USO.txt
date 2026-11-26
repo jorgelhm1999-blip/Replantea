@@ -1,4 +1,4 @@
-REPLANTEA 0.1.1 — WINDOWS x64
+REPLANTEA 0.2.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -6,6 +6,20 @@ No necesita instalar Python, AutoCAD ni ODA File Converter.
 No necesita conexión a Internet para procesar sus archivos.
 
 Abra un DWG o DXF con ejes planos XY. Seleccione las entidades y configure nombres, sentido y PK inicial.
+Seleccione una fila para resaltar ese eje en naranja en el mapa.
+Ordene las filas con Mayús + flecha arriba/abajo o los botones Subir/Bajar.
+La numeración sigue ese orden y el sentido de cada eje. Los encuentros compartidos
+conservan el primer número. Cambiar el orden renumera y reinicia las etiquetas movidas.
+Seleccione la escala de salida 1:1000 o 1:2000 antes de exportar.
+
+1:2000: vértices ARIAL 3,5 m; PK y RECTA/CURVA Standard 1,5 m; marcas cada 10 m.
+1:1000: vértices ARIAL 1,75 m; PK y RECTA/CURVA Standard 2 m; marcas cada 20 m.
+Las marcas tienen 3 m de longitud total (1,5 m a cada lado), en ambas escalas.
+PK con formato 0+000.000. Radios como cotas radiales editables, flecha cerrada
+rellena de 0,75 m y marca de centro 2,5 m. Anotaciones ACI 9 / RGB 192,192,192;
+etiquetas y puntos de vértices RGB 0,0,250. Estas alturas se expresan en unidades
+modelo (metros). Las cifras responden a los perfiles del proyecto.
+
 Pulse Calcular / actualizar. Revise las incidencias y recoloque las etiquetas que lo necesiten.
 Exporte un DXF nuevo, con las tablas de coordenadas y los CSV de apoyo.
 El dibujo original no se modifica. Los ejes no se unen, cierran ni ajustan automáticamente.

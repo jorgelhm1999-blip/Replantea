@@ -19,7 +19,11 @@ Se activa al actualizar el código en `main` o manualmente con **Run workflow**.
 
 ## Uso
 
-Seleccione los ejes, configure nombre y PK inicial, revise el sentido y calcule. Puede mover etiquetas y exportar un DXF nuevo con puntos, tangencias, centros, radios, PK y cuadros X/Y. Incluye CSV de coordenadas, curvas y elementos e informe de incidencias. Las tablas son entidades LINE/TEXT editables.
+Seleccione una fila para resaltar el eje en el mapa. Ordene los ejes con **Mayús + ↑ / ↓** o los botones Subir/Bajar. La numeración sigue el orden de las filas y el sentido del eje, incluidos los encuentros interiores. Los puntos compartidos conservan su primer número. Cambiar el orden reinicia las posiciones de etiquetas recolocadas.
+
+Seleccione **1:1000** o **1:2000** en la interfaz. Los perfiles fijan alturas, estilos, intervalo de PK y marcas de 3 m; consulte `LEEME_USO.txt`. Los radios se exportan como DIMENSION radiales editables. Las anotaciones usan ACI 9 y RGB 192,192,192; los vértices usan ARIAL y RGB 0,0,250.
+
+Configure nombre y PK inicial, revise el sentido y calcule. Puede mover etiquetas y exportar un DXF nuevo con puntos, tangencias, centros, radios, PK y cuadros X/Y. Incluye CSV de coordenadas, curvas y elementos e informe de incidencias. Las tablas son entidades LINE/TEXT editables.
 
 El archivo original conserva su geometría. No se ajustan radios ni se cierran o agrupan ejes automáticamente. La numeración es provisional hasta revisarla. El cálculo es en XY; no se generan cotas Z ni bases topográficas no aportadas. Consulte `LEEME_USO.txt` para formatos admitidos y limitaciones.
 
@@ -28,7 +32,7 @@ El archivo original conserva su geometría. No se ajustan radios ni se cierran o
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-build.txt
-.venv\Scripts\python -m unittest discover -s . -p test_motor.py -v
+.venv\Scripts\python -m unittest discover -s . -p "test_*.py" -v
 .venv\Scripts\python launcher.py --self-test --gui-test --report source-selftest.json
 .venv\Scripts\python -m PyInstaller --noconfirm --clean Replantea.spec
 ```

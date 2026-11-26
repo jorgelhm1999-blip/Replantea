@@ -1,4 +1,4 @@
-"""Replantea 0.1: replanteo exacto de rectas y arcos planos; no modifica ejes."""
+"""Replantea 0.2: replanteo exacto de rectas y arcos planos; no modifica ejes."""
 from dataclasses import dataclass
 from pathlib import Path
 import math, json, csv, tempfile
@@ -147,32 +147,42 @@ class Result:
     def __init__(self,axes,warnings):
         self.axes=[a for a in axes if a.selected];self.warnings=list(warnings);self.rows=[];self.curves=[];self.locations=[];self.vertices=[]
         self.curve_n=0;self.v_n=0
-        for axis in self.axes:
-            pk=axis.pk0
-            for j,s in enumerate(axis.segments):
-                if s.center is not None:
-                    self.curve_n+=1;n=self.curve_n
-                    self.point(f'TE{n}',s.a,'TANGENTES',axis.name,pk);self.point(f'TS{n}',s.b,'TANGENTES',axis.name,pk+s.length)
-                    self.point(f'C{n}',s.center,'CENTROS DE CURVAS',axis.name,None)
-                    pi=s.pi();vertex=''
-                    if pi is not None:
-                        vertex=self.vertex(pi,axis.name,None)
-                    else:self.warnings.append(f'{axis.name}: curva C{n}, tangentes paralelas; vértice de tangentes no definido.')
-                    self.curves.append(dict(id=n,eje=axis.name,segment=j+1,pk0=pk,pk1=pk+s.length,r=s.radius,length=s.length,angle_g=s.sweep*200/math.pi,center=s.center,pi=pi,vertex=vertex,tangent=None if pi is None else dist(pi,s.a),s=s))
-                else:
-                    self.vertex(s.a,axis.name,pk);self.vertex(s.b,axis.name,pk+s.length)
-                pk+=s.length
-        # Encuentros exactos entre ejes, también en interiores de segmentos.
+        events={a.handle:[] for a in self.axes}
+        def event(axis,station,kind,p,pk,curve=None):
+            events[axis.handle].append((station,len(events[axis.handle]),kind,p,pk,curve))
+        # Preparar todos los encuentros antes de numerar: su PK define cuándo se visitan.
         for i,a in enumerate(self.axes):
             for b in self.axes[i+1:]:
                 pa=a.pk0
-                for s in a.segments:
+                for seg in a.segments:
                     pb=b.pk0
-                    for t in b.segments:
-                        for p in intersections(s,t):
-                            v=self.vertex(p,a.name,pa+s.parameter(p)*s.length);self.point(v,p,'VÉRTICES',b.name,pb+t.parameter(p)*t.length)
-                        pb+=t.length
-                    pa+=s.length
+                    for other in b.segments:
+                        for p in intersections(seg,other):
+                            qa=pa+seg.parameter(p)*seg.length;qb=pb+other.parameter(p)*other.length
+                            event(a,qa,'V',p,qa);event(b,qb,'V',p,qb)
+                        pb+=other.length
+                    pa+=seg.length
+        for axis in self.axes:
+            pk=axis.pk0
+            for j,seg in enumerate(axis.segments):
+                if seg.center is not None:
+                    self.curve_n+=1;n=self.curve_n
+                    curve=dict(id=n,eje=axis.name,segment=j+1,pk0=pk,pk1=pk+seg.length,r=seg.radius,length=seg.length,angle_g=seg.sweep*200/math.pi,center=seg.center,pi=seg.pi(),vertex='',tangent=None if seg.pi() is None else dist(seg.pi(),seg.a),s=seg)
+                    self.curves.append(curve)
+                    event(axis,pk,'TE',seg.a,pk,curve);event(axis,pk+seg.length,'TS',seg.b,pk+seg.length,curve)
+                    event(axis,pk,'C',seg.center,None,curve)
+                    if curve['pi'] is not None:event(axis,pk+seg.length/2,'PI',curve['pi'],None,curve)
+                    else:self.warnings.append(f'{axis.name}: curva C{n}, tangentes paralelas; vértice de tangentes no definido.')
+                else:
+                    event(axis,pk,'V',seg.a,pk);event(axis,pk+seg.length,'V',seg.b,pk+seg.length)
+                pk+=seg.length
+            for station,_,kind,p,point_pk,curve in sorted(events[axis.handle],key=lambda e:(round(e[0],8),e[1])):
+                if kind in ('V','PI'):
+                    label=self.vertex(p,axis.name,point_pk)
+                    if kind=='PI':curve['vertex']=label
+                else:
+                    group='CENTROS DE CURVAS' if kind=='C' else 'TANGENTES'
+                    self.point(f"{kind}{curve['id']}",p,group,axis.name,point_pk)
         self.groups={g:[r for r in self.rows if r['grupo']==g] for g in ['VÉRTICES','TANGENTES','CENTROS DE CURVAS']}
     def point(self,label,p,group,axis,pk):
         row=next((r for r in self.rows if r['id']==label),None)
@@ -196,56 +206,86 @@ def write_csv(path,headers,rows):
     with open(path,'w',newline='',encoding='utf-8-sig') as f:
         w=csv.writer(f,delimiter=';');w.writerow(headers);w.writerows(rows)
 
-def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None):
+PROFILES={
+    '1:2000':dict(vertex_height=3.5,pk_height=1.5,geometry_height=1.5,tick_interval=10.,tick_length=3.),
+    '1:1000':dict(vertex_height=1.75,pk_height=2.,geometry_height=2.,tick_interval=20.,tick_length=3.),
+}
+GRAY_RGB=0xC0C0C0
+VERTEX_RGB=0x0000FA
+
+def profile_for(scale):
+    if scale not in PROFILES:raise ValueError('Escala admitida: 1:1000 o 1:2000.')
+    return dict(PROFILES[scale])
+
+def format_pk(value):
+    millis=round(abs(value)*1000);km,rest=divmod(millis,1000000)
+    return f"{'-' if value<0 else ''}{km}+{rest//1000:03d}.{rest%1000:03d}"
+
+def move_axes(axes,handles,direction):
+    if direction not in (-1,1):raise ValueError('Dirección de orden no válida.')
+    handles=set(handles);indices=range(1,len(axes)) if direction<0 else range(len(axes)-2,-1,-1)
+    for i in indices:
+        j=i+direction
+        if axes[i].handle in handles and axes[j].handle not in handles:axes[i],axes[j]=axes[j],axes[i]
+
+def label_height(loc,profile):
+    return profile['vertex_height'] if any(x.startswith('V') for x in loc['labels']) else profile['geometry_height']
+
+def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale='1:2000'):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
-    # Copia independiente; los objetos fuente conservan todos sus vértices y bulges.
     import copy
-    d=copy.deepcopy(doc);m=d.modelspace();h=float(text_height)
-    if h<=0:raise ValueError('La altura de texto debe ser positiva.')
-    layers={'RP_PUNTOS':5,'RP_TEXTOS':5,'RP_CENTROS':5,'RP_RADIOS':8,'RP_PK':4,'RP_TABLAS':7,'RP_EJES_NOMBRES':2}
-    for layer,col in layers.items():
-        if layer not in d.layers:d.layers.new(layer,dxfattribs={'color':col})
-    def text(t,p,layer='RP_TEXTOS',height=h,angle=0,align=None):
-        e=m.add_text(t,dxfattribs={'height':height,'layer':layer,'rotation':angle})
+    d=copy.deepcopy(doc);m=d.modelspace();profile=profile_for(scale);h=profile['vertex_height'];gh=profile['geometry_height']
+    layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS']
+    for layer in layers:
+        if layer not in d.layers:d.layers.new(layer)
+        l=d.layers.get(layer);l.dxf.color=5 if layer=='RP_VERTICES' else 9;l.dxf.true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB
+    if 'ARIAL' not in d.styles:d.styles.new('ARIAL',dxfattribs={'font':'arial.ttf'})
+    else:d.styles.get('ARIAL').dxf.font='arial.ttf'
+    d.styles.get('Standard').dxf.font='txt.shx'
+    def attrs(layer):return dict(layer=layer,color=5 if layer=='RP_VERTICES' else 9,true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
+    def text(t,p,layer='RP_TEXTOS',height=None,angle=0,align=None,style='Standard'):
+        e=m.add_text(t,dxfattribs={**attrs(layer),'height':gh if height is None else height,'style':style,'rotation':angle})
         e.set_placement(p,align=align or TextEntityAlignment.LEFT);return e
-    def line(a,b,layer='RP_RADIOS'):m.add_line(a,b,dxfattribs={'layer':layer})
-    # Ubicación simple de rótulos con comprobación de cajas; se pueden desplazar en CAD.
-    positions=label_layout(result,h)
-    positions.update(label_overrides or {})
+    def line(a,b,layer='RP_RADIOS'):return m.add_line(a,b,dxfattribs=attrs(layer))
+    positions=label_layout(result,profile=profile);positions.update(label_overrides or {})
     for loc in result.locations:
-        p=loc['p'];labels=loc['labels'];is_center=all(x.startswith('C') for x in labels)
-        layer='RP_CENTROS' if is_center else 'RP_PUNTOS'
-        m.add_circle(p,h*.25,dxfattribs={'layer':layer});m.add_point(p,dxfattribs={'layer':layer})
+        p=loc['p'];labels=loc['labels'];vertex=any(x.startswith('V') for x in labels);center=all(x.startswith('C') for x in labels)
+        layer='RP_VERTICES' if vertex else ('RP_CENTROS' if center else 'RP_PUNTOS')
+        size=label_height(loc,profile);m.add_circle(p,size*.20,dxfattribs=attrs(layer));m.add_point(p,dxfattribs=attrs(layer))
         label='='.join(labels);q=positions[label]
-        text(label,q,layer='RP_CENTROS' if is_center else 'RP_TEXTOS');line(p,q,'RP_TEXTOS')
+        text(label,q,layer=layer,height=size,style='ARIAL' if vertex else 'Standard');line(p,q,layer)
+    # Cotas radiales asociadas a cada arco: DIMENSION de tipo radio, sin explotar.
+    dimname='RP_RADIAL_'+scale.replace(':','_')
+    if dimname not in d.dimstyles:d.dimstyles.new(dimname)
+    d.dimstyles.get(dimname).update_dxf_attribs(dict(dimscale=1.,dimlfac=1.,dimtxt=gh,dimasz=.75,dimcen=2.5,dimclrd=9,dimclre=9,dimclrt=9,dimtxsty='Standard',dimdec=3,dimpost='<>',dimtad=0))
     for c in result.curves:
-        s=c['s'];mid=s.point(.5);radial=unit(sub(mid,s.center));q=add(mid,mul(radial,4*h))
-        text(f"R{c['id']}={c['r']:.3f}",q,height=h*.85)
-        text(f"L={c['length']:.3f}",add(q,(0,-h*1.2)),height=h*.7)
-        if c['pi'] is not None and abs(s.sweep)<math.pi:
-            text(f"TE={c['tangent']:.3f}  TS={c['tangent']:.3f}",add(q,(0,-h*2.4)),height=h*.7)
-            text(f"{200-abs(c['angle_g']):.4f}g",add(c['pi'],(h,-2*h)),height=h*.75)
+        seg=c['s'];mid=seg.point(.5);radial=unit(sub(mid,seg.center));q=add(mid,mul(radial,4*gh))
+        dim=m.add_radius_dim(center=seg.center,radius=seg.radius,location=q,dimstyle=dimname,dxfattribs=attrs('RP_RADIOS'))
+        dim.set_arrows(blk=ezdxf.ARROWS.closed_filled,size=.75);dim.render()
+        # El bloque de representación también lleva el color verdadero explícito.
+        block=d.blocks.get(dim.dimension.dxf.geometry)
+        for entity in block:
+            if entity.dxf.is_supported('true_color'):entity.dxf.color=9;entity.dxf.true_color=GRAY_RGB;entity.dxf.layer='RP_RADIOS'
         if c['pi'] is not None:
-            # Pequeñas prolongaciones de tangentes para reconocer el vértice geométrico.
-            for p in [s.a,s.b]:line(p,c['pi'])
+            for p in [seg.a,seg.b]:line(p,c['pi'])
     segrows=[]
-    for a in result.axes:
-        pk=a.pk0
-        text(a.name,add(a.segments[0].a,(0,-5*h)),'RP_EJES_NOMBRES',h*1.6)
-        for j,s in enumerate(a.segments):
-            segrows.append([a.name,j+1,'ARCO' if s.center else 'RECTA',f'{pk:.6f}',f'{pk+s.length:.6f}',f'{s.length:.6f}', '' if not s.center else f'{s.radius:.6f}',f'{az(s.tangent(0)):.6f}',f'{az(s.tangent(1)):.6f}'])
-            if s.center is None:
-                mid=s.point(.5);t=s.tangent(0);angle=math.degrees(math.atan2(t[1],t[0]));angle=angle+180 if angle>90 or angle<-90 else angle
-                text(f'L={s.length:.3f}',add(mid,mul(left(t),3*h)),height=h*.85,angle=angle)
-            if pk_step>0:
-                vals=[pk] if j==0 else []
-                k=math.floor(pk/pk_step)+1
-                while k*pk_step<pk+s.length-EPS:vals.append(k*pk_step);k+=1
-                vals.append(pk+s.length)
-                for v in vals:
-                    t=(v-pk)/s.length;p=s.point(t);normal=left(s.tangent(t));line(add(p,mul(normal,-h)),add(p,mul(normal,h)),'RP_PK')
-                    text(f'{int(v//1000)}+{v%1000:07.3f}',add(p,mul(normal,-4*h)),'RP_PK',h*.7)
-            pk+=s.length
+    for axis in result.axes:
+        pk=axis.pk0;text(axis.name.upper(),add(axis.segments[0].a,(0,-5*gh)),'RP_EJES_NOMBRES',gh)
+        for j,seg in enumerate(axis.segments):
+            segrows.append([axis.name,j+1,'ARCO' if seg.center else 'RECTA',f'{pk:.6f}',f'{pk+seg.length:.6f}',f'{seg.length:.6f}', '' if not seg.center else f'{seg.radius:.6f}',f'{az(seg.tangent(0)):.6f}',f'{az(seg.tangent(1)):.6f}'])
+            mid=seg.point(.5);tangent=seg.tangent(.5);angle=math.degrees(math.atan2(tangent[1],tangent[0]));angle=angle+180 if angle>90 or angle<-90 else angle
+            label='RECTA' if seg.center is None else f'CURVA R={seg.radius:.3f}'
+            text(label,add(mid,mul(left(tangent),3*gh)),'RP_ELEMENTOS',gh,angle)
+            # Marcas de longitud fija, independientes de la altura de los textos.
+            step=profile['tick_interval'];first=math.ceil((pk-EPS)/step);last=math.floor((pk+seg.length+EPS)/step)
+            for k in range(first,last+1):
+                value=k*step
+                # Una marca común al límite de dos elementos se dibuja una sola vez.
+                if j>0 and abs(value-pk)<EPS:continue
+                t=max(0.,min(1.,(value-pk)/seg.length));p=seg.point(t);normal=left(seg.tangent(t));half=profile['tick_length']/2
+                line(add(p,mul(normal,-half)),add(p,mul(normal,half)),'RP_PK')
+                text(format_pk(value),add(p,mul(normal,-3*profile['pk_height'])),'RP_PK',profile['pk_height'])
+            pk+=seg.length
     # Tablas de coordenadas en la derecha del trazado, con el formato de tres columnas de la referencia.
     ps=[s.point(t) for a in result.axes for s in a.segments for t in [0,.25,.5,.75,1]]
     xmin=min(p[0] for p in ps);xmax=max(p[0] for p in ps);ymax=max(p[1] for p in ps)
@@ -267,19 +307,21 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None):
     write_csv(out/'Coordenadas.csv',['PUNTO','GRUPO','X','Y','EJES','PK_POR_EJE'],[[r['id'],r['grupo'],f"{r['x']:.6f}",f"{r['y']:.6f}",','.join(r['ejes']),json.dumps(r['pks'],ensure_ascii=False)] for r in result.rows])
     write_csv(out/'Curvas.csv',['CURVA','EJE','VERTICE','TE','TS','CENTRO_X','CENTRO_Y','RADIO','DESARROLLO','GIRO_g','TANGENTE','PK_TE','PK_TS'],[[f"C{c['id']}",c['eje'],c['vertex'],f"TE{c['id']}",f"TS{c['id']}",*c['center'],c['r'],c['length'],c['angle_g'],c['tangent'],c['pk0'],c['pk1']] for c in result.curves])
     write_csv(out/'Elementos.csv',['EJE','ELEMENTO','TIPO','PK_INICIO','PK_FIN','LONGITUD','RADIO','AZIMUT_ENTRADA_g','AZIMUT_SALIDA_g'],segrows)
-    config=[dict(handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed) for a in result.axes]
+    config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed) for i,a in enumerate(result.axes)]
+    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250]),indent=2),encoding='utf-8')
     (out/'Ejes.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
     summary=dict(ejes=len(result.axes),curvas=len(result.curves),vertices=len(result.groups['VÉRTICES']),tangencias=len(result.groups['TANGENTES']),incidencias=len(result.warnings))
-    (out/'Revision.txt').write_text('REPLANTEA 0.1 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nSin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente.\n',encoding='utf-8')
+    (out/'Revision.txt').write_text('REPLANTEA 0.2 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente.\n',encoding='utf-8')
     return dest,summary
 
-def label_layout(result,h=1.5):
+def label_layout(result,h=1.5,profile=None):
     boxes=[];positions={}
     for loc in result.locations:
-        p=loc['p'];label='='.join(loc['labels']);w=len(label)*h*.65
+        size=label_height(loc,profile) if profile else h
+        p=loc['p'];label='='.join(loc['labels']);w=len(label)*size*.65
         for k in range(80):
-            ang=(k%8)*math.pi/4;rr=h*(2+3*(k//8));q=add(p,(rr*math.cos(ang),rr*math.sin(ang)))
-            box=(q[0],q[1],q[0]+w,q[1]+h*1.3)
+            ang=(k%8)*math.pi/4;rr=size*(2+3*(k//8));q=add(p,(rr*math.cos(ang),rr*math.sin(ang)))
+            box=(q[0],q[1],q[0]+w,q[1]+size*1.3)
             if all(box[2]<b[0] or box[0]>b[2] or box[3]<b[1] or box[1]>b[3] for b in boxes):break
         boxes.append(box);positions[label]=q
     return positions
