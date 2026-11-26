@@ -1,0 +1,78 @@
+name: Compilar Replantea para Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '*.py'
+      - '*.spec'
+      - 'requirements*.txt'
+      - 'fixtures/**'
+      - 'LEEME_USO.txt'
+      - '.github/workflows/windows-exe.yml'
+permissions:
+  contents: read
+concurrency:
+  group: replantea-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - name: Instalar herramientas
+        run: python -m pip install -r requirements-build.txt
+      - name: Comprobar geometría
+        run: python -m unittest discover -s . -p test_motor.py -v
+      - name: Comprobar lectores e interfaz antes del empaquetado
+        run: python launcher.py --self-test --gui-test --report source-selftest.json
+      - name: Crear ejecutable independiente
+        run: python -m PyInstaller --noconfirm --clean Replantea.spec
+      - name: Comprobar el ejecutable congelado
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'dist/Replantea.exe').Path
+          $report = Join-Path $env:GITHUB_WORKSPACE 'frozen-selftest.json'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--self-test','--gui-test','--require-frozen','--report',('"' + $report + '"')) -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'El ejecutable no terminó su comprobación en 90 segundos.' }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) { if (Test-Path $report) { Get-Content $report }; throw "El ejecutable terminó con código $($process.ExitCode)" }
+          if (-not (Test-Path $report)) { throw 'No se generó el informe de comprobación.' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.status -ne 'ok' -or -not $result.frozen -or -not $result.gui) { throw 'Comprobación incompleta del ejecutable.' }
+          Get-Content $report
+      - name: Preparar descarga
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force entrega | Out-Null
+          Copy-Item dist/Replantea.exe entrega/
+          Copy-Item LEEME_USO.txt entrega/
+          Copy-Item frozen-selftest.json entrega/COMPROBACION.json
+          $hash = (Get-FileHash entrega/Replantea.exe -Algorithm SHA256).Hash
+          "$hash  Replantea.exe" | Set-Content entrega/SHA256.txt
+      - name: Guardar ejecutable para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Replantea-Windows-x64
+          path: entrega/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Guardar diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Replantea-diagnostico
+          path: |
+            *selftest.json
+            build/Replantea/warn-Replantea.txt
+          if-no-files-found: ignore
+          retention-days: 7

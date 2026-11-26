@@ -1,0 +1,20 @@
+REPLANTEA 0.1.1 — WINDOWS x64
+
+El paquete generado por GitHub Actions contiene Replantea.exe.
+Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
+No necesita instalar Python, AutoCAD ni ODA File Converter.
+No necesita conexión a Internet para procesar sus archivos.
+
+Abra un DWG o DXF con ejes planos XY. Seleccione las entidades y configure nombres, sentido y PK inicial.
+Pulse Calcular / actualizar. Revise las incidencias y recoloque las etiquetas que lo necesiten.
+Exporte un DXF nuevo, con las tablas de coordenadas y los CSV de apoyo.
+El dibujo original no se modifica. Los ejes no se unen, cierran ni ajustan automáticamente.
+
+Ámbito de esta versión: LWPOLYLINE con rectas y arcos, LINE, ARC y CIRCLE en XY.
+No admite alineaciones propietarias de Civil 3D, clotoides, DWF, SPLINE ni geometría 3D.
+La lectura DWG es experimental; compruebe geometría y numeración antes de entregar un plano.
+Las cotas Z y bases topográficas BR no se inventan ni se generan.
+Las coordenadas del cuadro CAD se muestran a tres decimales; los CSV conservan más precisión.
+
+Si hubiera un fallo de inicio, el registro está en:
+%LOCALAPPDATA%\Replantea\replantea.log

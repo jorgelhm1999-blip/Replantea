@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+entrega/
+*selftest.json
+replantea.log
+*.dxf
+*.dwg
+!fixtures/synthetic.dwg
