@@ -22,7 +22,7 @@ class Splash:
         self.skip.place(relx=1,rely=1,anchor='se',x=-14,y=-12)
         self.window.deiconify();self.window.lift();self.job=self.root.after(20,self.tick)
     def tick(self):
-        self.job=None
+        self.cancel_job()
         if self.done:return
         elapsed=time.perf_counter()-self.start
         if elapsed>=self.duration:self.finish();return
