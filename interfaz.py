@@ -83,8 +83,7 @@ class App:
             if child is self.tree:left.rowconfigure(row,weight=1,minsize=70)
         left.columnconfigure(0,weight=1)
         self.issues_panel.grid(row=len(children),column=0,sticky='ew',pady=(0,8));self.issues_panel.grid_remove()
-        ttk.Label(root,text='Rueda: zoom · Arrastrar fondo: desplazar · Arrastrar una etiqueta: recolocar · Coordenadas XY, sin ajuste de ejes.',padding=6).pack(fill='x')
-        ttk.Label(root,textvariable=self.status,padding=6).pack(fill='x')
+        ttk.Label(root,textvariable=self.status,padding=(12,7)).pack(side='bottom',fill='x',before=pan)
         self.active=None;self.last=(0,0);self.text_items={};root.after(100,self.poll)
     def toggle_issues(self):
         self.issues_visible=not self.issues_visible
