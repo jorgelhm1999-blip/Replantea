@@ -1,4 +1,4 @@
-REPLANTEA 0.3.0 — WINDOWS x64
+REPLANTEA 0.4.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -14,6 +14,24 @@ También puede arrastrar un conjunto de filas previamente seleccionadas.
 La numeración sigue ese orden y el sentido de cada eje. Los encuentros compartidos
 conservan el primer número. Cambiar el orden renumera y reinicia las etiquetas movidas.
 Seleccione la escala de salida 1:1000 o 1:2000 antes de exportar.
+
+GLORIETAS
+Seleccione los ejes que pertenecen a una glorieta y pulse Marcar glorieta.
+Puede seleccionar varios arcos independientes. Quitar glorieta revierte la clasificación.
+También puede alternar Sí/No con doble clic en la columna Glorieta.
+La clasificación es manual y recalcula conservando el encuadre y la selección.
+Estos ejes no generan vértices V ni líneas auxiliares hacia PI.
+Se conservan centros, tangencias, radios y PK. Los V de los accesos sin marcar permanecen.
+La clasificación se documenta en Ejes.json, pero no se reimporta como sesión.
+
+TABLAS DE COORDENADAS
+ARIAL altura 2; anchos 10 / 19,2289 / 19,2289; todas las filas altura 4.
+Formato fijo en unidades de modelo para ambas escalas.
+Justificación medio centro. Anclaje de coordenadas X/Y: 9,1366 a la derecha
+y 2,0211 abajo desde la esquina superior izquierda de cada celda de datos.
+Identificadores V/C/TE/TS azules RGB 0,0,255. Coordenadas, rejilla, cabeceras
+y títulos subrayados negros RGB 0,0,0. Cabecera escalonada X/Y.
+Vértices a la izquierda, centros a la derecha y tangentes debajo de centros.
 
 1:2000: vértices ARIAL 3,5 m; PK y RECTA/R ARIAL 1,5 m; marcas cada 10 m.
 1:1000: vértices ARIAL 1,75 m; PK y RECTA/R ARIAL 2 m; marcas cada 20 m.

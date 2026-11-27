@@ -45,6 +45,7 @@ class OrderAndStyleTests(unittest.TestCase):
                     self.assertEqual(e.dxf.height,p['vertex_height']);self.assertEqual(e.dxf.style,'ARIAL')
                 for e in z.modelspace():
                     if e.dxf.layer.startswith('RP_'):
+                        if e.dxf.layer=='RP_TABLAS':continue
                         self.assertEqual(e.dxf.true_color,VERTEX_RGB if e.dxf.layer=='RP_VERTICES' else GRAY_RGB)
                         self.assertEqual(e.dxf.color,5 if e.dxf.layer=='RP_VERTICES' else 9)
                 dims=list(z.modelspace().query('DIMENSION'));self.assertEqual(len(dims),1)

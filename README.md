@@ -25,6 +25,10 @@ Seleccione **1:1000** o **1:2000** en la interfaz. Los perfiles fijan alturas y 
 
 Configure nombre y PK inicial, revise el sentido y calcule. Puede mover etiquetas y exportar un DXF nuevo con puntos, tangencias, centros, radios, PK y cuadros X/Y. Incluye CSV de coordenadas, curvas y elementos e informe de incidencias. Las tablas son entidades LINE/TEXT editables.
 
+**Glorietas (0.4.0):** seleccione uno o varios ejes y pulse **Marcar glorieta** o **Quitar glorieta**. También puede alternar la columna **Glorieta** con doble clic. La clasificación es manual; puede aplicarse a varios arcos independientes de una misma glorieta. Recalcula sin cambiar el encuadre. Los ejes marcados no generan V (incluidos PI y encuentros), ni líneas auxiliares hacia la intersección de tangentes; conservan centros, tangencias, radios y PK. Un acceso sin marcar conserva sus propios V en los encuentros. `Ejes.json` documenta la clasificación; no es un archivo de sesión reimportable.
+
+**Tablas:** ARIAL de altura 2; columnas de 10 / 19,2289 / 19,2289 y todas las filas de altura 4, en unidades de modelo, para ambas escalas. X/Y tienen justificación medio centro y su punto de alineación queda 9,1366 a la derecha y 2,0211 abajo desde la esquina superior izquierda de cada celda de datos. Identificadores V/C/TE/TS azules (RGB 0,0,255); coordenadas, cabeceras, títulos subrayados y rejilla negros (RGB 0,0,0). Cabecera escalonada con X/Y, sin celda vacía sobre el identificador. Vértices a la izquierda, centros a la derecha y tangentes debajo de centros. No se inventan bases BR ni cotas Z.
+
 El archivo original conserva su geometría. No se ajustan radios ni se cierran o agrupan ejes automáticamente. La numeración es provisional hasta revisarla. El cálculo es en XY; no se generan cotas Z ni bases topográficas no aportadas. Consulte `LEEME_USO.txt` para formatos admitidos y limitaciones.
 
 ## Desarrollo y pruebas

@@ -7,7 +7,7 @@ from motor import load,Result,export,label_layout,dist,profile_for,PROFILES,move
 
 class App:
     def __init__(self,root):
-        self.root=root;root.title('Replantea 0.3.0');root.geometry('1380x850')
+        self.root=root;root.title('Replantea 0.4.0');root.geometry('1380x850')
         self.doc=None;self.axes=[];self.warnings=[];self.result=None;self.offsets={};self.scale=1;self.origin=(0,0);self.queue=queue.Queue();self.busy=False
         self.status=tk.StringVar(value='Abra un DWG o DXF. No se modificará el archivo original.')
         self.drawing_scale=tk.StringVar(value='1:2000');self.profile=profile_for('1:2000');self.centers=tk.BooleanVar(value=False)
@@ -32,8 +32,8 @@ class App:
         pan=ttk.Panedwindow(root,orient='horizontal');pan.pack(fill='both',expand=True,padx=10)
         left=ttk.Frame(pan);right=ttk.Frame(pan);pan.add(left,weight=1);pan.add(right,weight=3)
         ttk.Label(left,text='Ejes · Seleccionar: resaltar · Arrastrar filas o Mayús + ↑ / ↓: ordenar').pack(anchor='w')
-        self.tree=ttk.Treeview(left,columns=('order','on','name','pk','long','arcs'),show='headings',selectmode='extended',height=15)
-        for c,t,w in [('order','Orden',42),('on','Usar',45),('name','Eje',85),('pk','PK inicial',75),('long','Longitud',95),('arcs','Arcos',50)]:self.tree.heading(c,text=t);self.tree.column(c,width=w,anchor='center')
+        self.tree=ttk.Treeview(left,columns=('order','on','name','pk','long','arcs','roundabout'),show='headings',selectmode='extended',height=15)
+        for c,t,w in [('order','Orden',42),('on','Usar',45),('name','Eje',70),('pk','PK inicial',70),('long','Longitud',80),('arcs','Arcos',45),('roundabout','Glorieta',65)]:self.tree.heading(c,text=t);self.tree.column(c,width=w,anchor='center')
         self.tree.pack(fill='both',expand=True);self.tree.bind('<Double-1>',self.edit);self.tree.bind('<<TreeviewSelect>>',lambda e:self.draw())
         self.tree.bind('<Shift-Up>',lambda e:self.reorder(-1));self.tree.bind('<Shift-Down>',lambda e:self.reorder(1))
         self.tree.bind('<ButtonPress-1>',self.row_press);self.tree.bind('<B1-Motion>',self.row_motion);self.tree.bind('<ButtonRelease-1>',self.row_release)
@@ -43,7 +43,10 @@ class App:
         ttk.Button(controls,text='Invertir sentido',command=self.reverse).pack(side='left',padx=5)
         ttk.Button(controls,text='↑ Subir',command=lambda:self.reorder(-1)).pack(side='left',padx=2)
         ttk.Button(controls,text='↓ Bajar',command=lambda:self.reorder(1)).pack(side='left',padx=2)
-        ttk.Label(left,text='Doble clic: activar, editar nombre o PK. El orden y el sentido determinan la numeración.',wraplength=540).pack(anchor='w')
+        roundabout_controls=ttk.Frame(left);roundabout_controls.pack(fill='x',pady=(0,5))
+        ttk.Button(roundabout_controls,text='Marcar glorieta',command=lambda:self.set_roundabout(True)).pack(side='left')
+        ttk.Button(roundabout_controls,text='Quitar glorieta',command=lambda:self.set_roundabout(False)).pack(side='left',padx=5)
+        ttk.Label(left,text='Doble clic: activar, nombre, PK o Glorieta. Los ejes de glorieta no generan vértices V ni líneas hacia PI; conservan centros, tangencias y PK.',wraplength=540).pack(anchor='w')
         ttk.Label(left,text='Incidencias y criterios de cálculo').pack(anchor='w')
         self.log=tk.Text(left,height=14,wrap='word',font=('Segoe UI',9));self.log.pack(fill='both',expand=True)
         self.canvas=tk.Canvas(right,bg='#f8fafc',highlightthickness=0);self.canvas.pack(fill='both',expand=True)
@@ -86,7 +89,7 @@ class App:
     def refresh(self):
         selected=self.tree.selection();focus=self.tree.focus()
         self.tree.delete(*self.tree.get_children())
-        for i,a in enumerate(self.axes):self.tree.insert('', 'end',iid=a.handle,values=(i+1,'Sí' if a.selected else 'No',a.name,f'{a.pk0:.3f}',f'{a.length:.3f}',sum(s.center is not None for s in a.segments)))
+        for i,a in enumerate(self.axes):self.tree.insert('', 'end',iid=a.handle,values=(i+1,'Sí' if a.selected else 'No',a.name,f'{a.pk0:.3f}',f'{a.length:.3f}',sum(s.center is not None for s in a.segments),'Sí' if a.roundabout else 'No'))
         self.tree.selection_set([h for h in selected if self.tree.exists(h)])
         if self.tree.exists(focus):self.tree.focus(focus)
     def axis(self,handle):return next(a for a in self.axes if a.handle==handle)
@@ -146,6 +149,7 @@ class App:
         row=self.tree.identify_row(e.y);col=self.tree.identify_column(e.x)
         if not row or self.busy:return
         a=self.axis(row)
+        if col=='#7':self.set_roundabout(not a.roundabout,[row]);return
         if col=='#2':a.selected=not a.selected;self.result=None;self.offsets={};self.refresh();self.draw();return
         if col not in ('#3','#4'):return
         box=self.tree.bbox(row,col);entry=ttk.Entry(self.tree);entry.place(x=box[0],y=box[1],width=box[2],height=box[3]);entry.insert(0,a.name if col=='#3' else str(a.pk0));entry.select_range(0,'end');entry.focus_set()
@@ -169,6 +173,12 @@ class App:
     def reverse(self):
         if self.busy:return
         for handle in self.tree.selection():self.axis(handle).reverse()
+        self.refresh();self.calculate(fit_view=False)
+    def set_roundabout(self,value,handles=None):
+        if self.busy:return
+        handles=list(self.tree.selection() if handles is None else handles)
+        if not handles:return
+        for handle in handles:self.axis(handle).roundabout=bool(value)
         self.refresh();self.calculate(fit_view=False)
     def calculate(self,fit_view=True):
         if self.busy or not self.axes:return
