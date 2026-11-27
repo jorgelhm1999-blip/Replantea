@@ -27,7 +27,19 @@ def run(gui=False,require_frozen=False):
         export(d2,rr,temp/'salida_dwg')
         for scale in PROFILES:
             target,_=export(d,result,temp/scale.replace(':','_'),scale=scale)
-            assert len(list(ezdxf.readfile(target).modelspace().query('DIMENSION')))==1
+            target_doc=ezdxf.readfile(target)
+            assert len(list(target_doc.modelspace().query('DIMENSION[layer=="RP_RADIOS"]')))==1
+            assert len(list(target_doc.modelspace().query('DIMENSION[layer=="RP_ANGULOS"]')))==1
+            assert len(list(target_doc.modelspace().query('MULTILEADER[layer=="RP_TANGENTES"]')))==2
+            angle=next(iter(target_doc.modelspace().query('DIMENSION[layer=="RP_ANGULOS"]')))
+            angle_style=target_doc.dimstyles.get(angle.dxf.dimstyle)
+            assert angle_style.dxf.dimexe==1.25 and angle_style.dxf.dimexo==.625 and angle_style.dxf.dimasz==.75
+            assert angle.override().get('dimblk1')=='ARCHTICK' and angle.override().get('dimblk2')=='ARCHTICK'
+            for leader in target_doc.modelspace().query('MULTILEADER[layer=="RP_TANGENTES"]'):
+                assert leader.dxf.leader_extend_to_text==1 and leader.dxf.has_dogleg==1 and leader.dxf.has_landing==1
+                assert leader.dxf.text_left_attachment_type==6 and leader.dxf.text_right_attachment_type==6
+                assert leader.dxf.dogleg_length==.5 and leader.context.landing_gap_size==.5 and leader.context.char_height==1.5
+                assert target_doc.entitydb[leader.dxf.arrow_head_handle].dxf.name=='_NONE'
         assert not list(reread.modelspace().query('LINE[layer=="RP_CENTROS"]'))
         assert len(list(reread.modelspace().query('LINE[layer=="RP_TRANSICIONES"]')))==1
         for entity in reread.modelspace().query('TEXT'):
@@ -42,6 +54,11 @@ def run(gui=False,require_frozen=False):
         marked_doc=ezdxf.readfile(marked_path)
         assert not marked_doc.audit().errors
         assert not list(marked_doc.modelspace().query('LINE[layer=="RP_RADIOS"]'))
+        assert not list(marked_doc.modelspace().query('DIMENSION[layer=="RP_ANGULOS"]'))
+        assert not list(marked_doc.modelspace().query('MULTILEADER[layer=="RP_TANGENTES"]'))
+        center_label=next(iter(marked_doc.modelspace().query('MTEXT[layer=="RP_CENTROS"]')))
+        assert center_label.dxf.char_height==1.75 and center_label.dxf.bg_fill_true_color==0xFAFAFA
+        assert center_label.dxf.box_fill_scale==1.0001 and center_label.dxf.true_color==250
         assert json.loads((temp/'glorieta'/'Ejes.json').read_text())[0]['glorieta']
         axes[0].roundabout=False
         primary=axes[0]
@@ -104,6 +121,9 @@ def run(gui=False,require_frozen=False):
                 assert primary.roundabout and not other.roundabout
                 app.edit(SimpleNamespace(x=box[0]+box[2]//2,y=box[1]+box[3]//2));root.update()
                 assert not primary.roundabout
+                app.centers.set(True);app.draw();root.update()
+                center_items=[item for item,key in app.text_items.items() if key.startswith('C')]
+                assert center_items and app.canvas.itemcget(center_items[0],'fill')=='#0000fa'
                 gui_ok=True
             finally:root.destroy()
-        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',ezdxf=ezdxf.__version__,summary=summary)
+        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',center_mtext='ok',angular_dimensions='ok',tangent_multileaders='ok',ezdxf=ezdxf.__version__,summary=summary)

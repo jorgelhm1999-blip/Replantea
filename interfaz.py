@@ -7,7 +7,7 @@ from motor import load,Result,export,label_layout,dist,profile_for,PROFILES,move
 
 class App:
     def __init__(self,root):
-        self.root=root;root.title('Replantea 0.4.0');root.geometry('1380x850')
+        self.root=root;root.title('Replantea 0.5.0');root.geometry('1380x850')
         self.doc=None;self.axes=[];self.warnings=[];self.result=None;self.offsets={};self.scale=1;self.origin=(0,0);self.queue=queue.Queue();self.busy=False
         self.status=tk.StringVar(value='Abra un DWG o DXF. No se modificará el archivo original.')
         self.drawing_scale=tk.StringVar(value='1:2000');self.profile=profile_for('1:2000');self.centers=tk.BooleanVar(value=False)
@@ -218,11 +218,11 @@ class App:
             positions=label_layout(self.result,profile=self.profile);positions.update(self.offsets)
             for loc in self.result.locations:
                 if not self.centers.get() and all(x.startswith('C') for x in loc['labels']):continue
-                vertex=any(x.startswith('V') for x in loc['labels']);color='#0000fa' if vertex else '#999999'
-                key='='.join(loc['labels']);p=self.xy(loc['p']);q=self.xy(positions[key]);r=2.5
+                vertex=any(x.startswith('V') for x in loc['labels']);center=all(x.startswith('C') for x in loc['labels']);color='#0000fa' if vertex or center else '#999999'
+                key='='.join(loc['labels']);p=self.xy(loc['p']);q=self.xy(positions[key]);r=max(2.5,self.scale) if center else 2.5
                 self.canvas.create_oval(p[0]-r,p[1]-r,p[0]+r,p[1]+r,outline=color)
                 if not all(x.startswith('C') for x in loc['labels']):self.canvas.create_line(*p,*q,fill=color)
-                item=self.canvas.create_text(*q,text=key,anchor='sw',font=('Arial',10 if vertex else 9),fill=color);self.text_items[item]=key
+                item=self.canvas.create_text(*q,text=key,anchor='w' if center else 'sw',font=('Arial',10 if vertex else 9),fill=color);self.text_items[item]=key
     def zoom(self,e,factor=None):
         if not self.axes:return
         f=factor or (1.2 if e.delta>0 else 1/1.2);p=self.world(e.x,e.y);self.scale=max(.0001,min(10000,self.scale*f));self.origin=(p[0]-e.x/self.scale,p[1]+e.y/self.scale);self.draw()

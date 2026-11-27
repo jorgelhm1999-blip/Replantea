@@ -37,7 +37,7 @@ class OrderAndStyleTests(unittest.TestCase):
                 self.assertFalse(list(z.modelspace().query('TEXT[layer=="RP_ELEMENTOS"]')))
                 self.assertFalse(list(z.modelspace().query('LINE[layer=="RP_CENTROS"]')))
                 center=result_center=Result(axes,w).curves[0]['center']
-                center_label=next(iter(z.modelspace().query('TEXT[layer=="RP_CENTROS"]')))
+                center_label=next(iter(z.modelspace().query('MTEXT[layer=="RP_CENTROS"]')))
                 self.assertLess(dist(center_label.dxf.insert,center),p['geometry_height']*2)
                 for e in z.modelspace().query('TEXT'):
                     if e.dxf.layer.startswith('RP_'):self.assertEqual(e.dxf.style,'ARIAL')
@@ -45,10 +45,10 @@ class OrderAndStyleTests(unittest.TestCase):
                     self.assertEqual(e.dxf.height,p['vertex_height']);self.assertEqual(e.dxf.style,'ARIAL')
                 for e in z.modelspace():
                     if e.dxf.layer.startswith('RP_'):
-                        if e.dxf.layer=='RP_TABLAS':continue
-                        self.assertEqual(e.dxf.true_color,VERTEX_RGB if e.dxf.layer=='RP_VERTICES' else GRAY_RGB)
-                        self.assertEqual(e.dxf.color,5 if e.dxf.layer=='RP_VERTICES' else 9)
-                dims=list(z.modelspace().query('DIMENSION'));self.assertEqual(len(dims),1)
+                        if e.dxf.layer in ('RP_TABLAS','RP_ANGULOS','RP_TANGENTES'):continue
+                        self.assertEqual(e.dxf.true_color,VERTEX_RGB if e.dxf.layer in ('RP_VERTICES','RP_CENTROS') else GRAY_RGB)
+                        self.assertEqual(e.dxf.color,5 if e.dxf.layer in ('RP_VERTICES','RP_CENTROS') else 9)
+                dims=list(z.modelspace().query('DIMENSION[layer=="RP_RADIOS"]'));self.assertEqual(len(dims),1)
                 e=dims[0];self.assertEqual(e.dxf.dimtype&7,4);self.assertAlmostEqual(e.get_measurement(),10)
                 style=z.dimstyles.get(e.dxf.dimstyle);self.assertEqual(style.dxf.dimasz,.75);self.assertEqual(style.dxf.dimcen,2.5)
                 self.assertEqual(style.dxf.dimtxsty,'ARIAL')

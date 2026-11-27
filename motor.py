@@ -1,9 +1,10 @@
-"""Replantea 0.4: replanteo exacto de rectas y arcos planos; no modifica ejes."""
+"""Replantea 0.5: replanteo exacto de rectas y arcos planos; no modifica ejes."""
 from dataclasses import dataclass
 from pathlib import Path
 import math, json, csv, tempfile
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
+from anotaciones import FORMAT as ANNOTATION_FORMAT,prepare_styles,add_center_label,add_tangent_annotations
 
 EPS=1e-6
 TAU=2*math.pi
@@ -302,6 +303,7 @@ def transition_marks(axis,short_arm=3.5,long_arm=32.646):
         pk+=after.length
 
 def label_height(loc,profile):
+    if all(x.startswith('C') for x in loc['labels']):return 1.75
     return profile['vertex_height'] if any(x.startswith('V') for x in loc['labels']) else profile['geometry_height']
 
 def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale='1:2000',transition_short=3.5,transition_long=32.646):
@@ -309,12 +311,16 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     import copy
     d=copy.deepcopy(doc);m=d.modelspace();profile=profile_for(scale);h=profile['vertex_height'];gh=profile['geometry_height']
-    layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS','RP_TRANSICIONES']
+    # DXF 2013 conserva también «Extensión de directriz» (código 295).
+    if d.dxfversion<'AC1027':d.dxfversion='AC1027'
+    layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS','RP_TRANSICIONES','RP_ANGULOS','RP_TANGENTES']
     for layer in layers:
         if layer not in d.layers:d.layers.new(layer)
-        l=d.layers.get(layer);l.dxf.color=7 if layer=='RP_TABLAS' else (5 if layer=='RP_VERTICES' else 9);l.dxf.true_color=0 if layer=='RP_TABLAS' else (VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
+        black=layer in ('RP_TABLAS','RP_ANGULOS','RP_TANGENTES');blue=layer in ('RP_VERTICES','RP_CENTROS')
+        l=d.layers.get(layer);l.dxf.color=7 if black else (5 if blue else 9);l.dxf.true_color=0 if black else (VERTEX_RGB if blue else GRAY_RGB)
     if 'ARIAL' not in d.styles:d.styles.new('ARIAL',dxfattribs={'font':'arial.ttf'})
     else:d.styles.get('ARIAL').dxf.font='arial.ttf'
+    prepare_styles(d)
     def attrs(layer):return dict(layer=layer,color=5 if layer=='RP_VERTICES' else 9,true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
     def text(t,p,layer='RP_TEXTOS',height=None,angle=0,align=None,style='ARIAL'):
         e=m.add_text(t,dxfattribs={**attrs(layer),'height':gh if height is None else height,'style':style,'rotation':angle})
@@ -324,8 +330,10 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     for loc in result.locations:
         p=loc['p'];labels=loc['labels'];vertex=any(x.startswith('V') for x in labels);center=all(x.startswith('C') for x in labels)
         layer='RP_VERTICES' if vertex else ('RP_CENTROS' if center else 'RP_PUNTOS')
-        size=label_height(loc,profile);m.add_circle(p,size*.20,dxfattribs=attrs(layer));m.add_point(p,dxfattribs=attrs(layer))
         label='='.join(labels);q=positions[label]
+        if center:
+            add_center_label(m,label,p,q);continue
+        size=label_height(loc,profile);m.add_circle(p,size*.20,dxfattribs=attrs(layer));m.add_point(p,dxfattribs=attrs(layer))
         text(label,q,layer=layer,height=size)
         if not center:line(p,q,layer)
     # Cotas radiales asociadas a cada arco: DIMENSION de tipo radio, sin explotar.
@@ -342,6 +350,7 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
             if entity.dxf.is_supported('true_color'):entity.dxf.color=9;entity.dxf.true_color=GRAY_RGB;entity.dxf.layer='RP_RADIOS'
         if c['pi'] is not None and not c['roundabout']:
             for p in [seg.a,seg.b]:line(p,c['pi'])
+            add_tangent_annotations(d,m,c)
     segrows=[]
     for axis in result.axes:
         pk=axis.pk0;text(axis.name.upper(),add(axis.segments[0].a,(0,-5*gh)),'RP_EJES_NOMBRES',gh)
@@ -381,10 +390,10 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     write_csv(out/'Curvas.csv',['CURVA','EJE','VERTICE','TE','TS','CENTRO_X','CENTRO_Y','RADIO','DESARROLLO','GIRO_g','TANGENTE','PK_TE','PK_TS'],[[f"C{c['id']}",c['eje'],c['vertex'],f"TE{c['id']}",f"TS{c['id']}",*c['center'],c['r'],c['length'],c['angle_g'],c['tangent'],c['pk0'],c['pk1']] for c in result.curves])
     write_csv(out/'Elementos.csv',['EJE','ELEMENTO','TIPO','PK_INICIO','PK_FIN','LONGITUD','RADIO','AZIMUT_ENTRADA_g','AZIMUT_SALIDA_g'],segrows)
     config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed,glorieta=a.roundabout) for i,a in enumerate(result.axes)]
-    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250],tablas=TABLE_FORMAT),indent=2),encoding='utf-8')
+    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250],tablas=TABLE_FORMAT,anotaciones_curvas=ANNOTATION_FORMAT),indent=2),encoding='utf-8')
     (out/'Ejes.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
     summary=dict(ejes=len(result.axes),curvas=len(result.curves),vertices=len(result.groups['VÉRTICES']),tangencias=len(result.groups['TANGENTES']),incidencias=len(result.warnings))
-    (out/'Revision.txt').write_text('REPLANTEA 0.4 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente. Glorietas: clasificación manual documentada en Ejes.json; no generan V ni líneas auxiliares a PI. Los V propios de los accesos se conservan. Tablas ARIAL 2; filas 4; columnas 10/19.2289/19.2289; anclaje X/Y medio centro a 9.1366 derecha y 2.0211 abajo de la esquina de su celda. Identificadores azules; coordenadas y rejilla negras.\n',encoding='utf-8')
+    (out/'Revision.txt').write_text('REPLANTEA 0.5 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente. Glorietas: clasificación manual documentada en Ejes.json; no generan V ni líneas auxiliares a PI. Los V propios de los accesos se conservan. Tablas ARIAL 2; filas 4; columnas 10/19.2289/19.2289; anclaje X/Y medio centro a 9.1366 derecha y 2.0211 abajo de la esquina de su celda. Identificadores azules; coordenadas y rejilla negras. Centros con círculo azul R1 y MTEXT ARIAL 1.75 con fondo RGB 250,250,250 y factor 1.0001. Ángulo interior en gon con 4 decimales como DIMENSION; directrices MULTILEADER TE/TS hacia puntos medios de PI–tangencias. No se generan ángulos ni directrices de PI en glorietas.\n',encoding='utf-8')
     return dest,summary
 
 def label_layout(result,h=1.5,profile=None):
@@ -394,7 +403,7 @@ def label_layout(result,h=1.5,profile=None):
         p=loc['p'];label='='.join(loc['labels']);w=len(label)*size*.65
         if all(x.startswith('C') for x in loc['labels']):
             # Sin directriz: mantener el rótulo junto al centro geométrico.
-            positions[label]=add(p,(size*.9,size*.9));continue
+            positions[label]=add(p,(1.4,0));continue
         for k in range(80):
             ang=(k%8)*math.pi/4;rr=size*(2+3*(k//8));q=add(p,(rr*math.cos(ang),rr*math.sin(ang)))
             box=(q[0],q[1],q[0]+w,q[1]+size*1.3)

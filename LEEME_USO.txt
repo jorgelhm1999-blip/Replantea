@@ -1,4 +1,4 @@
-REPLANTEA 0.4.0 — WINDOWS x64
+REPLANTEA 0.5.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -32,6 +32,24 @@ y 2,0211 abajo desde la esquina superior izquierda de cada celda de datos.
 Identificadores V/C/TE/TS azules RGB 0,0,255. Coordenadas, rejilla, cabeceras
 y títulos subrayados negros RGB 0,0,0. Cabecera escalonada X/Y.
 Vértices a la izquierda, centros a la derecha y tangentes debajo de centros.
+
+CENTROS, ÁNGULOS Y TANGENTES
+Centros: círculo R=1 y MTEXT ARIAL altura 1,75, ambos RGB 0,0,250.
+Fondo de MTEXT RGB 250,250,250; factor de desfase de borde 1,0001; sin marco.
+Junto a cada centro se mantiene su identificador C, sin directriz hacia el texto.
+En las curvas con PI finito que no son glorietas se añade una cota angular nativa
+del ángulo interior entre las tangentes, en grados centesimales con cuatro decimales.
+Flechas 1 y 2 oblicuo grueso (ARCHTICK), tamaño 0,75; extensión 1,25; desfase 0,625.
+Texto angular ARIAL 1,5; cota y texto negros. El radio conserva su cota radial.
+Directrices MULTILEADER nativas TE=... y TS=...: longitud PI–tangencia a dos decimales,
+apuntando al punto medio de cada segmento. Directriz recta, sin extremo de cota,
+conexión horizontal activada de 0,5 y separación de 0,5. Extensión de directriz: sí.
+ARIAL altura 1,5, enlace horizontal, izquierda y derecha subrayar línea superior,
+sin marco de texto. Directriz y texto negros. Colocación automática editable en CAD.
+Estos tamaños son fijos en unidades de modelo para ambas escalas de salida.
+Las glorietas no generan cotas angulares ni directrices hacia PI.
+Salida DXF 2013 o posterior para conservar la extensión de directriz.
+El archivo fuente no cambia de versión ni de geometría.
 
 1:2000: vértices ARIAL 3,5 m; PK y RECTA/R ARIAL 1,5 m; marcas cada 10 m.
 1:1000: vértices ARIAL 1,75 m; PK y RECTA/R ARIAL 2 m; marcas cada 20 m.
