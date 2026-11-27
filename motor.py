@@ -1,4 +1,4 @@
-"""Replantea 0.3: replanteo exacto de rectas y arcos planos; no modifica ejes."""
+"""Replantea 0.4: replanteo exacto de rectas y arcos planos; no modifica ejes."""
 from dataclasses import dataclass
 from pathlib import Path
 import math, json, csv, tempfile
@@ -90,6 +90,7 @@ class Axis:
     closed:bool=False
     selected:bool=True
     pk0:float=0.
+    roundabout:bool=False
     def reverse(self):self.segments=[Segment(s.b,s.a,-s.bulge) for s in self.segments[::-1]]
     @property
     def length(self):return sum(s.length for s in self.segments)
@@ -149,6 +150,8 @@ class Result:
         self.curve_n=0;self.v_n=0
         events={a.handle:[] for a in self.axes}
         def event(axis,station,kind,p,pk,curve=None):
+            # Clasificación manual por eje; los accesos conservan sus propios V.
+            if axis.roundabout and kind in ('V','PI'):return
             events[axis.handle].append((station,len(events[axis.handle]),kind,p,pk,curve))
         # Preparar todos los encuentros antes de numerar: su PK define cuándo se visitan.
         for i,a in enumerate(self.axes):
@@ -167,12 +170,12 @@ class Result:
             for j,seg in enumerate(axis.segments):
                 if seg.center is not None:
                     self.curve_n+=1;n=self.curve_n
-                    curve=dict(id=n,eje=axis.name,segment=j+1,pk0=pk,pk1=pk+seg.length,r=seg.radius,length=seg.length,angle_g=seg.sweep*200/math.pi,center=seg.center,pi=seg.pi(),vertex='',tangent=None if seg.pi() is None else dist(seg.pi(),seg.a),s=seg)
+                    curve=dict(id=n,eje=axis.name,segment=j+1,pk0=pk,pk1=pk+seg.length,r=seg.radius,length=seg.length,angle_g=seg.sweep*200/math.pi,center=seg.center,pi=seg.pi(),vertex='',tangent=None if seg.pi() is None else dist(seg.pi(),seg.a),s=seg,roundabout=axis.roundabout)
                     self.curves.append(curve)
                     event(axis,pk,'TE',seg.a,pk,curve);event(axis,pk+seg.length,'TS',seg.b,pk+seg.length,curve)
                     event(axis,pk,'C',seg.center,None,curve)
                     if curve['pi'] is not None:event(axis,pk+seg.length/2,'PI',curve['pi'],None,curve)
-                    else:self.warnings.append(f'{axis.name}: curva C{n}, tangentes paralelas; vértice de tangentes no definido.')
+                    elif not axis.roundabout:self.warnings.append(f'{axis.name}: curva C{n}, tangentes paralelas; vértice de tangentes no definido.')
                 else:
                     event(axis,pk,'V',seg.a,pk);event(axis,pk+seg.length,'V',seg.b,pk+seg.length)
                 pk+=seg.length
@@ -212,6 +215,44 @@ PROFILES={
 }
 GRAY_RGB=0xC0C0C0
 VERTEX_RGB=0x0000FA
+TABLE_FORMAT=dict(text_height=2.,column_widths=[10.,19.2289,19.2289],row_height=4.,coordinate_offset=[9.1366,2.0211],text_rgb=[0,0,0],identifier_rgb=[0,0,255])
+
+def coordinate_tables(modelspace,result,origin):
+    """Cuadros LINE/TEXT en unidades de modelo, independientes de la escala."""
+    cw=TABLE_FORMAT['column_widths'];rh=TABLE_FORMAT['row_height'];height=TABLE_FORMAT['text_height'];width=sum(cw)
+    dx,dy=TABLE_FORMAT['coordinate_offset'];tx,ty=origin;gap=5.
+    def attributes(blue=False):return dict(layer='RP_TABLAS',color=5 if blue else 7,true_color=0x0000FF if blue else 0x000000)
+    def line(a,b):modelspace.add_line(a,b,dxfattribs=attributes())
+    def text(caption,p,blue=False):
+        e=modelspace.add_text(caption,dxfattribs={**attributes(blue),'height':height,'style':'ARIAL'})
+        e.set_placement(p,align=TextEntityAlignment.MIDDLE_CENTER)
+        return e
+    def title(caption,center,y):
+        e=text(caption,(center,y))
+        # Subrayado editable con el ancho real de ARIAL (mismo estilo que el texto).
+        from ezdxf.tools.text_size import text_size
+        half=text_size(e).width/2
+        line((center-half,y-height*.75),(center+half,y-height*.75))
+    title('COORDENADAS REPLANTEO',tx+(2*width+gap)/2,ty+11)
+    right=tx+width+gap
+    centers_height=(len(result.groups['CENTROS DE CURVAS'])+1)*rh
+    tables=[('VÉRTICES',tx,ty),('CENTROS DE CURVAS',right,ty),('TANGENTES',right,ty-centers_height-9.)]
+    for group,x,y in tables:
+        rows=result.groups[group];bottom=y-(len(rows)+1)*rh
+        title(group,x+cw[0]+(cw[1]+cw[2])/2,y+4.)
+        # Cabecera escalonada: solo X e Y; el identificador empieza en la primera fila de datos.
+        for j,caption in [(1,'X'),(2,'Y')]:
+            text(caption,(x+sum(cw[:j])+cw[j]/2,y-rh/2))
+        for k,row in enumerate(rows,1):
+            top=y-k*rh
+            text(row['id'],(x+cw[0]/2,top-rh/2),blue=True)
+            for j,key in [(1,'x'),(2,'y')]:
+                text(f"{row[key]:.3f}",(x+sum(cw[:j])+dx,top-dy))
+        line((x+cw[0],y),(x+width,y))
+        for k in range(1,len(rows)+2):line((x if rows else x+cw[0],y-k*rh),(x+width,y-k*rh))
+        if rows:line((x,y-rh),(x,bottom))
+        for j in range(1,4):
+            xx=x+sum(cw[:j]);line((xx,y),(xx,bottom))
 
 def profile_for(scale):
     if scale not in PROFILES:raise ValueError('Escala admitida: 1:1000 o 1:2000.')
@@ -271,7 +312,7 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     layers=['RP_PUNTOS','RP_VERTICES','RP_TEXTOS','RP_CENTROS','RP_RADIOS','RP_PK','RP_TABLAS','RP_EJES_NOMBRES','RP_ELEMENTOS','RP_TRANSICIONES']
     for layer in layers:
         if layer not in d.layers:d.layers.new(layer)
-        l=d.layers.get(layer);l.dxf.color=5 if layer=='RP_VERTICES' else 9;l.dxf.true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB
+        l=d.layers.get(layer);l.dxf.color=7 if layer=='RP_TABLAS' else (5 if layer=='RP_VERTICES' else 9);l.dxf.true_color=0 if layer=='RP_TABLAS' else (VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
     if 'ARIAL' not in d.styles:d.styles.new('ARIAL',dxfattribs={'font':'arial.ttf'})
     else:d.styles.get('ARIAL').dxf.font='arial.ttf'
     def attrs(layer):return dict(layer=layer,color=5 if layer=='RP_VERTICES' else 9,true_color=VERTEX_RGB if layer=='RP_VERTICES' else GRAY_RGB)
@@ -299,7 +340,7 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
         block=d.blocks.get(dim.dimension.dxf.geometry)
         for entity in block:
             if entity.dxf.is_supported('true_color'):entity.dxf.color=9;entity.dxf.true_color=GRAY_RGB;entity.dxf.layer='RP_RADIOS'
-        if c['pi'] is not None:
+        if c['pi'] is not None and not c['roundabout']:
             for p in [seg.a,seg.b]:line(p,c['pi'])
     segrows=[]
     for axis in result.axes:
@@ -332,29 +373,18 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
     # Tablas de coordenadas en la derecha del trazado, con el formato de tres columnas de la referencia.
     ps=[s.point(t) for a in result.axes for s in a.segments for t in [0,.25,.5,.75,1]]
     xmin=min(p[0] for p in ps);xmax=max(p[0] for p in ps);ymax=max(p[1] for p in ps)
-    tx=xmax+30*h;ty=ymax;cw=[12*h,40*h,40*h];rh=3*h;tw=sum(cw)
-    text('COORDENADAS REPLANTEO',(tx+tw*1.6,ty+9*h),'RP_TABLAS',h*1.8,align=TextEntityAlignment.CENTER)
-    for n,g in enumerate(['VÉRTICES','TANGENTES','CENTROS DE CURVAS']):
-        x=tx+n*(tw+10*h);rows=result.groups[g];y=ty
-        text(g,(x+tw/2,y+4*h),'RP_TABLAS',h*1.2,align=TextEntityAlignment.CENTER)
-        headers=['','X','Y'];table=[headers]+[[r['id'],f"{r['x']:.3f}",f"{r['y']:.3f}"] for r in rows]
-        for k,row in enumerate(table):
-            yy=y-k*rh
-            for j,cell in enumerate(row):
-                xx=x+sum(cw[:j]);text(str(cell),(xx+cw[j]/2,yy-rh*.7),'RP_TABLAS',h,align=TextEntityAlignment.CENTER)
-        for k in range(len(table)+1):line((x,y-k*rh),(x+tw,y-k*rh),'RP_TABLAS')
-        for j in range(4):xx=x+sum(cw[:j]);line((xx,y),(xx,y-len(table)*rh),'RP_TABLAS')
+    coordinate_tables(m,result,(xmax+30*h,ymax))
     # No se crean bases topográficas: no se han aportado observaciones de campo.
     d.set_modelspace_vport(height=max(100,ymax-min(p[1] for p in ps))*1.2,center=((xmin+xmax)/2,(ymax+min(p[1] for p in ps))/2))
     dest=out/'Replanteo.dxf';d.saveas(dest)
     write_csv(out/'Coordenadas.csv',['PUNTO','GRUPO','X','Y','EJES','PK_POR_EJE'],[[r['id'],r['grupo'],f"{r['x']:.6f}",f"{r['y']:.6f}",','.join(r['ejes']),json.dumps(r['pks'],ensure_ascii=False)] for r in result.rows])
     write_csv(out/'Curvas.csv',['CURVA','EJE','VERTICE','TE','TS','CENTRO_X','CENTRO_Y','RADIO','DESARROLLO','GIRO_g','TANGENTE','PK_TE','PK_TS'],[[f"C{c['id']}",c['eje'],c['vertex'],f"TE{c['id']}",f"TS{c['id']}",*c['center'],c['r'],c['length'],c['angle_g'],c['tangent'],c['pk0'],c['pk1']] for c in result.curves])
     write_csv(out/'Elementos.csv',['EJE','ELEMENTO','TIPO','PK_INICIO','PK_FIN','LONGITUD','RADIO','AZIMUT_ENTRADA_g','AZIMUT_SALIDA_g'],segrows)
-    config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed) for i,a in enumerate(result.axes)]
-    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250]),indent=2),encoding='utf-8')
+    config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed,glorieta=a.roundabout) for i,a in enumerate(result.axes)]
+    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250],tablas=TABLE_FORMAT),indent=2),encoding='utf-8')
     (out/'Ejes.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
     summary=dict(ejes=len(result.axes),curvas=len(result.curves),vertices=len(result.groups['VÉRTICES']),tangencias=len(result.groups['TANGENTES']),incidencias=len(result.warnings))
-    (out/'Revision.txt').write_text('REPLANTEA 0.3 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente.\n',encoding='utf-8')
+    (out/'Revision.txt').write_text('REPLANTEA 0.4 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente. Glorietas: clasificación manual documentada en Ejes.json; no generan V ni líneas auxiliares a PI. Los V propios de los accesos se conservan. Tablas ARIAL 2; filas 4; columnas 10/19.2289/19.2289; anclaje X/Y medio centro a 9.1366 derecha y 2.0211 abajo de la esquina de su celda. Identificadores azules; coordenadas y rejilla negras.\n',encoding='utf-8')
     return dest,summary
 
 def label_layout(result,h=1.5,profile=None):
