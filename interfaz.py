@@ -77,8 +77,9 @@ class App:
         self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.drag);self.canvas.bind('<ButtonRelease-1>',lambda e:setattr(self,'active',None))
         # La tabla absorbe los cambios de altura; los controles y las incidencias permanecen visibles.
         children=left.pack_slaves()
+        for child in children:child.pack_forget()
         for row,child in enumerate(children):
-            child.pack_forget();child.grid(row=row,column=0,sticky='nsew' if child is self.tree else 'ew',pady=3)
+            child.grid(row=row,column=0,sticky='nsew' if child is self.tree else 'ew',pady=3)
             if child is self.tree:left.rowconfigure(row,weight=1,minsize=70)
         left.columnconfigure(0,weight=1)
         self.issues_panel.grid(row=len(children),column=0,sticky='ew',pady=(0,8));self.issues_panel.grid_remove()
