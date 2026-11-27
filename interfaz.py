@@ -75,13 +75,20 @@ class App:
         self.canvas.bind('<Configure>',lambda e:self.draw());self.canvas.bind('<MouseWheel>',self.zoom)
         self.canvas.bind('<Button-4>',lambda e:self.zoom(e,1.2));self.canvas.bind('<Button-5>',lambda e:self.zoom(e,1/1.2))
         self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.drag);self.canvas.bind('<ButtonRelease-1>',lambda e:setattr(self,'active',None))
+        # La tabla absorbe los cambios de altura; los controles y las incidencias permanecen visibles.
+        children=left.pack_slaves()
+        for row,child in enumerate(children):
+            child.pack_forget();child.grid(row=row,column=0,sticky='nsew' if child is self.tree else 'ew',pady=3)
+            if child is self.tree:left.rowconfigure(row,weight=1,minsize=70)
+        left.columnconfigure(0,weight=1)
+        self.issues_panel.grid(row=len(children),column=0,sticky='ew',pady=(0,8));self.issues_panel.grid_remove()
         ttk.Label(root,text='Rueda: zoom · Arrastrar fondo: desplazar · Arrastrar una etiqueta: recolocar · Coordenadas XY, sin ajuste de ejes.',padding=6).pack(fill='x')
         ttk.Label(root,textvariable=self.status,padding=6).pack(fill='x')
         self.active=None;self.last=(0,0);self.text_items={};root.after(100,self.poll)
     def toggle_issues(self):
         self.issues_visible=not self.issues_visible
-        if self.issues_visible:self.issues_panel.pack(fill='both',expand=False,pady=(0,8))
-        else:self.issues_panel.pack_forget()
+        if self.issues_visible:self.issues_panel.grid()
+        else:self.issues_panel.grid_remove()
         self.issues_button.configure(text='Ocultar incidencias' if self.issues_visible else 'Mostrar incidencias')
     def run(self,fn,done):
         if self.busy:return
