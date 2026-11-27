@@ -7,7 +7,7 @@ from motor import load,Result,export,label_layout,dist,profile_for,PROFILES,move
 
 class App:
     def __init__(self,root):
-        self.root=root;root.title('Replantea 0.6.0');root.geometry('1380x850')
+        self.root=root;root.title('Replantea 0.7.0');root.geometry('1380x850')
         self.doc=None;self.axes=[];self.warnings=[];self.result=None;self.offsets={};self.scale=1;self.origin=(0,0);self.queue=queue.Queue();self.busy=False
         self.status=tk.StringVar(value='Abra un DWG o DXF. No se modificará el archivo original.')
         self.drawing_scale=tk.StringVar(value='1:2000');self.profile=profile_for('1:2000');self.centers=tk.BooleanVar(value=False)

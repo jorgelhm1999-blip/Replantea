@@ -1,4 +1,4 @@
-REPLANTEA 0.6.0 — WINDOWS x64
+REPLANTEA 0.7.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -82,3 +82,11 @@ INICIO E INTERFAZ
 Introducción de 12,5 s al arrancar; Abrir ahora o Escape permiten saltarla.
 Incidencias ocultas por defecto; Mostrar incidencias despliega el panel.
 Icono propio: eje bajo una lupa, en la ventana, ejecutable y cabecera.
+
+FORMATO 0.7.0 (PREVALECE SOBRE LOS CRITERIOS ANTERIORES)
+Colores Por capa. Auxiliares y textos generales negros RGB 0,0,0.
+V/TE/TS/C: textoM ARIAL 1,75; ancho definido 1,75; espaciado exacto 2,9167.
+Fondo blanco con factor 1,0001. Identificadores azules; textos radiales negros.
+Distancias directas en planta entre V consecutivos de cada eje, sin saltar a otro eje.
+03_RVI_REP_DIST_VERTICES_TXT: RGB 0,187,250, ARIAL 1,5, espaciado 2,5, sin fondo.
+RP_PK: marcas ordinarias y todos los textos PK. Texto ordinario alineado con su marca.

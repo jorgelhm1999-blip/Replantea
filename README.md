@@ -48,3 +48,11 @@ El repositorio contiene exclusivamente código y un DWG sintético de prueba. No
 ## Interfaz e inicio (0.6.0)
 
 Introducción aprobada de 12,5 segundos al iniciar, con Abrir ahora o Escape para acceder directamente. Interfaz con cabecera azul marino, acciones en azul petróleo y filas alternas. Se retira la línea informativa de alturas; las incidencias se conservan en un panel oculto que se abre con Mostrar incidencias. Icono propio de eje bajo una lupa en el ejecutable Windows, título, barra de tareas y cabecera superior derecha.
+
+## Formato por capas (0.7.0)
+
+Las anotaciones generadas se exportan Por capa, sin colores verdaderos fijados en las entidades. Auxiliares, radios, ángulos, marcas y textos de PK, nombres de ejes y transiciones negros. Identificadores V/TE/TS/C azules; tablas con rejilla y coordenadas negras e identificadores azules. Capas de textos de puntos: RP_VERTICES_TXT, RP_TANGENCIAS_TXT y RP_CENTROS_TXT. TextoM ARIAL 1,75, anchura definida 1,75, espaciado exacto 2,9167 y fondo blanco con factor 1,0001. El radio lleva texto negro con esos mismos valores; los ángulos mantienen texto negro sobre fondo blanco.
+
+RP_PK agrupa las marcas ordinarias y todos los rótulos de PK, incluidos los de tangencias. Los PK ordinarios siguen la perpendicular de su marca y se sitúan a su lado, alineados con ella. Las líneas de transición y sus textos RECTA/R conservan RP_TRANSICIONES.
+
+Las distancias XY directas entre V consecutivos se rotulan en el orden de recorrido de cada eje, sin conectar listas de ejes distintos. TextoM V12-V11=XX.XX en 03_RVI_REP_DIST_VERTICES_TXT, RGB 0,187,250, ARIAL 1,5, espaciado exacto 2,5 y sin fondo. En glorietas no se inventan V ni distancias entre ellos.

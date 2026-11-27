@@ -27,11 +27,11 @@ class AnnotationTests(unittest.TestCase):
                 circles=list(m.query('CIRCLE[layer=="RP_CENTROS"]'));self.assertEqual(len(circles),1)
                 circle=circles[0];self.assertEqual(circle.dxf.radius,1)
                 self.assertLess(dist(circle.dxf.center,r.curves[0]['center']),EPS)
-                self.assertEqual(circle.dxf.true_color,250)
-                t=next(iter(m.query('MTEXT[layer=="RP_CENTROS"]')))
+                self.assertEqual(circle.dxf.color,256);self.assertEqual(z.layers.get(circle.dxf.layer).rgb,(0,0,250))
+                t=next(iter(m.query('MTEXT[layer=="RP_CENTROS_TXT"]')))
                 self.assertEqual(t.text,'C1');self.assertEqual(t.dxf.style,'ARIAL');self.assertEqual(t.dxf.char_height,1.75)
-                self.assertEqual(tuple(t.dxf.insert),(123,456,0));self.assertEqual(t.dxf.true_color,250)
-                self.assertEqual(t.dxf.bg_fill,1);self.assertEqual(t.dxf.bg_fill_true_color,0xFAFAFA)
+                self.assertEqual(tuple(t.dxf.insert),(123,456,0));self.assertEqual(t.dxf.color,256);self.assertEqual(z.layers.get(t.dxf.layer).rgb,(0,0,250))
+                self.assertEqual(t.dxf.bg_fill,1);self.assertEqual(t.dxf.bg_fill_true_color,0xFFFFFF)
                 self.assertEqual(t.dxf.box_fill_scale,1.0001)
                 self.assertFalse(list(m.query('TEXT[layer=="RP_CENTROS"]')))
                 self.assertFalse(list(m.query('LINE[layer=="RP_CENTROS"]')))
@@ -82,7 +82,7 @@ class AnnotationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp);example_source(p/'in.dxf');d,a,w=load(p/'in.dxf');a[0].roundabout=True
             out,_=export(d,Result(a,w),p/'out');z=ezdxf.readfile(out)
-            self.assertTrue(list(z.modelspace().query('MTEXT[layer=="RP_CENTROS"]')))
+            self.assertTrue(list(z.modelspace().query('MTEXT[layer=="RP_CENTROS_TXT"]')))
             self.assertFalse(list(z.modelspace().query('DIMENSION[layer=="RP_ANGULOS"]')))
             self.assertFalse(list(z.modelspace().query('MULTILEADER[layer=="RP_TANGENTES"]')))
 

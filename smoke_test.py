@@ -40,13 +40,22 @@ def run(gui=False,require_frozen=False):
                 assert leader.dxf.text_left_attachment_type==6 and leader.dxf.text_right_attachment_type==6
                 assert leader.dxf.dogleg_length==.5 and leader.context.landing_gap_size==.5 and leader.context.char_height==1.5
                 assert target_doc.entitydb[leader.dxf.arrow_head_handle].dxf.name=='_NONE'
+        from formato_cad import LAYERS,DISTANCE_LAYER
+        for entity in reread.modelspace():
+            if entity.dxf.layer in LAYERS:
+                assert entity.dxf.color==256 and not entity.dxf.hasattr('true_color')
+                assert reread.layers.get(entity.dxf.layer).rgb==LAYERS[entity.dxf.layer]
+        assert list(reread.modelspace().query(f'MTEXT[layer=="{DISTANCE_LAYER}"]'))
+        for label in reread.modelspace().query('MTEXT[layer=="RP_VERTICES_TXT"]'):
+            assert label.dxf.char_height==1.75 and label.dxf.width==1.75
+            assert abs(label.dxf.line_spacing_factor*1.75*5/3-2.9167)<1e-8
         assert not list(reread.modelspace().query('LINE[layer=="RP_CENTROS"]'))
         assert len(list(reread.modelspace().query('LINE[layer=="RP_TRANSICIONES"]')))==1
         for entity in reread.modelspace().query('TEXT'):
             if entity.dxf.layer.startswith('RP_'):assert entity.dxf.style=='ARIAL'
         tables=list(reread.modelspace().query('TEXT[layer=="RP_TABLAS"]'))
         assert tables and all(t.dxf.height==2 and t.dxf.halign==1 and t.dxf.valign==2 for t in tables)
-        assert all(t.dxf.true_color==(255 if re.fullmatch(r'(V|TE|TS|C)\d+',t.dxf.text) else 0) for t in tables)
+        assert all(t.dxf.color==256 and reread.layers.get(t.dxf.layer).rgb==(0,0,0) for t in tables)
         axes[0].roundabout=True
         marked=Result(axes,w)
         assert not marked.vertices and len(marked.curves)==1 and len(marked.groups['TANGENTES'])==2
@@ -56,9 +65,9 @@ def run(gui=False,require_frozen=False):
         assert not list(marked_doc.modelspace().query('LINE[layer=="RP_RADIOS"]'))
         assert not list(marked_doc.modelspace().query('DIMENSION[layer=="RP_ANGULOS"]'))
         assert not list(marked_doc.modelspace().query('MULTILEADER[layer=="RP_TANGENTES"]'))
-        center_label=next(iter(marked_doc.modelspace().query('MTEXT[layer=="RP_CENTROS"]')))
-        assert center_label.dxf.char_height==1.75 and center_label.dxf.bg_fill_true_color==0xFAFAFA
-        assert center_label.dxf.box_fill_scale==1.0001 and center_label.dxf.true_color==250
+        center_label=next(iter(marked_doc.modelspace().query('MTEXT[layer=="RP_CENTROS_TXT"]')))
+        assert center_label.dxf.char_height==1.75 and center_label.dxf.bg_fill_true_color==0xFFFFFF
+        assert center_label.dxf.box_fill_scale==1.0001 and center_label.dxf.color==256
         assert json.loads((temp/'glorieta'/'Ejes.json').read_text())[0]['glorieta']
         axes[0].roundabout=False
         primary=axes[0]
@@ -152,4 +161,4 @@ def run(gui=False,require_frozen=False):
                     assert ctypes.windll.shell32.ExtractIconExW(sys.executable,-1,None,None,0)>0
                 gui_ok=True
             finally:root.destroy()
-        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',startup_animation='ok' if gui_ok else 'not_run',issues_panel='ok' if gui_ok else 'not_run',app_icon='ok' if gui_ok else 'not_run',center_mtext='ok',angular_dimensions='ok',tangent_multileaders='ok',ezdxf=ezdxf.__version__,summary=summary)
+        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',layer_colors='ok',vertex_distances='ok',pk_alignment='ok',startup_animation='ok' if gui_ok else 'not_run',issues_panel='ok' if gui_ok else 'not_run',app_icon='ok' if gui_ok else 'not_run',center_mtext='ok',angular_dimensions='ok',tangent_multileaders='ok',ezdxf=ezdxf.__version__,summary=summary)

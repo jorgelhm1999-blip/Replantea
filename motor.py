@@ -148,7 +148,7 @@ def load(path):
 class Result:
     def __init__(self,axes,warnings):
         self.axes=[a for a in axes if a.selected];self.warnings=list(warnings);self.rows=[];self.curves=[];self.locations=[];self.vertices=[]
-        self.curve_n=0;self.v_n=0
+        self.curve_n=0;self.v_n=0;self.axis_vertices={}
         events={a.handle:[] for a in self.axes}
         def event(axis,station,kind,p,pk,curve=None):
             # Clasificación manual por eje; los accesos conservan sus propios V.
@@ -180,9 +180,11 @@ class Result:
                 else:
                     event(axis,pk,'V',seg.a,pk);event(axis,pk+seg.length,'V',seg.b,pk+seg.length)
                 pk+=seg.length
+            ordered=[];self.axis_vertices[axis.handle]=ordered
             for station,_,kind,p,point_pk,curve in sorted(events[axis.handle],key=lambda e:(round(e[0],8),e[1])):
                 if kind in ('V','PI'):
                     label=self.vertex(p,axis.name,point_pk)
+                    if not ordered or ordered[-1]['id']!=label:ordered.append(dict(id=label,p=tuple(p)))
                     if kind=='PI':curve['vertex']=label
                 else:
                     group='CENTROS DE CURVAS' if kind=='C' else 'TANGENTES'
@@ -211,10 +213,10 @@ def write_csv(path,headers,rows):
         w=csv.writer(f,delimiter=';');w.writerow(headers);w.writerows(rows)
 
 PROFILES={
-    '1:2000':dict(vertex_height=3.5,pk_height=1.5,geometry_height=1.5,tick_interval=10.,tick_length=3.,pk_interval=100.),
+    '1:2000':dict(vertex_height=1.75,pk_height=1.5,geometry_height=1.5,tick_interval=10.,tick_length=3.,pk_interval=100.),
     '1:1000':dict(vertex_height=1.75,pk_height=2.,geometry_height=2.,tick_interval=20.,tick_length=3.,pk_interval=100.),
 }
-GRAY_RGB=0xC0C0C0
+GRAY_RGB=0x000000
 VERTEX_RGB=0x0000FA
 TABLE_FORMAT=dict(text_height=2.,column_widths=[10.,19.2289,19.2289],row_height=4.,coordinate_offset=[9.1366,2.0211],text_rgb=[0,0,0],identifier_rgb=[0,0,255])
 
@@ -303,8 +305,7 @@ def transition_marks(axis,short_arm=3.5,long_arm=32.646):
         pk+=after.length
 
 def label_height(loc,profile):
-    if all(x.startswith('C') for x in loc['labels']):return 1.75
-    return profile['vertex_height'] if any(x.startswith('V') for x in loc['labels']) else profile['geometry_height']
+    return 1.75
 
 def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale='1:2000',transition_short=3.5,transition_long=32.646):
     if not all(math.isfinite(v) and v>0 for v in (transition_short,transition_long)):raise ValueError('Los brazos de la marca de transición deben ser positivos.')
@@ -334,12 +335,13 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
         if center:
             add_center_label(m,label,p,q);continue
         size=label_height(loc,profile);m.add_circle(p,size*.20,dxfattribs=attrs(layer));m.add_point(p,dxfattribs=attrs(layer))
-        text(label,q,layer=layer,height=size)
+        from formato_cad import point_label
+        point_label(m,label,q,layer)
         if not center:line(p,q,layer)
     # Cotas radiales asociadas a cada arco: DIMENSION de tipo radio, sin explotar.
     dimname='RP_RADIAL_'+scale.replace(':','_')
     if dimname not in d.dimstyles:d.dimstyles.new(dimname)
-    d.dimstyles.get(dimname).update_dxf_attribs(dict(dimscale=1.,dimlfac=1.,dimtxt=gh,dimasz=.75,dimcen=2.5,dimclrd=9,dimclre=9,dimclrt=9,dimtxsty='ARIAL',dimdec=3,dimpost='<>',dimtad=0))
+    d.dimstyles.get(dimname).update_dxf_attribs(dict(dimscale=1.,dimlfac=1.,dimtxt=1.75,dimasz=.75,dimcen=2.5,dimclrd=256,dimclre=256,dimclrt=256,dimtfill=2,dimtfillclr=255,dimtxsty='ARIAL',dimdec=3,dimpost='<>',dimtad=0))
     for c in result.curves:
         seg=c['s'];mid=seg.point(.5);radial=unit(sub(mid,seg.center));q=add(mid,mul(radial,4*gh))
         dim=m.add_radius_dim(center=seg.center,radius=seg.radius,location=q,dimstyle=dimname,dxfattribs=attrs('RP_RADIOS'))
@@ -365,7 +367,11 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
                 t=max(0.,min(1.,(value-pk)/seg.length));p=seg.point(t);normal=left(seg.tangent(t));half=profile['tick_length']/2
                 line(add(p,mul(normal,-half)),add(p,mul(normal,half)),'RP_PK')
                 if abs(value/profile['pk_interval']-round(value/profile['pk_interval']))<EPS:
-                    text(format_pk(value),add(p,mul(normal,-3*profile['pk_height'])),'RP_PK',profile['pk_height'])
+                    angle=readable_angle(normal)
+                    direction=(math.cos(math.radians(angle)),math.sin(math.radians(angle)))
+                    side=-1
+                    alignment=TextEntityAlignment.MIDDLE_LEFT if dot(direction,mul(normal,side))>0 else TextEntityAlignment.MIDDLE_RIGHT
+                    text(format_pk(value),add(p,mul(normal,side*(half+profile['pk_height']))),'RP_PK',profile['pk_height'],angle,alignment)
             pk+=seg.length
         for mark in transition_marks(axis,transition_short,transition_long):
             normal=mark['normal'];tangent=mark['tangent'];angle=readable_angle(normal)
@@ -378,22 +384,25 @@ def export(doc,result,out,text_height=1.5,pk_step=100,label_overrides=None,scale
             # Mantener el PK fuera del brazo largo también cuando la lectura gira 180 grados.
             direction=(math.cos(math.radians(angle)),math.sin(math.radians(angle)))
             alignment=TextEntityAlignment.MIDDLE_LEFT if dot(direction,normal)>0 else TextEntityAlignment.MIDDLE_RIGHT
-            text(format_pk(mark['pk']),end,'RP_TRANSICIONES',profile['pk_height'],angle,alignment)
+            text(format_pk(mark['pk']),end,'RP_PK',profile['pk_height'],angle,alignment)
     # Tablas de coordenadas en la derecha del trazado, con el formato de tres columnas de la referencia.
     ps=[s.point(t) for a in result.axes for s in a.segments for t in [0,.25,.5,.75,1]]
     xmin=min(p[0] for p in ps);xmax=max(p[0] for p in ps);ymax=max(p[1] for p in ps)
     coordinate_tables(m,result,(xmax+30*h,ymax))
     # No se crean bases topográficas: no se han aportado observaciones de campo.
     d.set_modelspace_vport(height=max(100,ymax-min(p[1] for p in ps))*1.2,center=((xmin+xmax)/2,(ymax+min(p[1] for p in ps))/2))
+    from formato_cad import vertex_distances,organize_layers
+    vertex_distances(m,result)
+    organize_layers(d)
     dest=out/'Replanteo.dxf';d.saveas(dest)
     write_csv(out/'Coordenadas.csv',['PUNTO','GRUPO','X','Y','EJES','PK_POR_EJE'],[[r['id'],r['grupo'],f"{r['x']:.6f}",f"{r['y']:.6f}",','.join(r['ejes']),json.dumps(r['pks'],ensure_ascii=False)] for r in result.rows])
     write_csv(out/'Curvas.csv',['CURVA','EJE','VERTICE','TE','TS','CENTRO_X','CENTRO_Y','RADIO','DESARROLLO','GIRO_g','TANGENTE','PK_TE','PK_TS'],[[f"C{c['id']}",c['eje'],c['vertex'],f"TE{c['id']}",f"TS{c['id']}",*c['center'],c['r'],c['length'],c['angle_g'],c['tangent'],c['pk0'],c['pk1']] for c in result.curves])
     write_csv(out/'Elementos.csv',['EJE','ELEMENTO','TIPO','PK_INICIO','PK_FIN','LONGITUD','RADIO','AZIMUT_ENTRADA_g','AZIMUT_SALIDA_g'],segrows)
     config=[dict(orden=i+1,handle=a.handle,nombre=a.name,capa=a.layer,pk0=a.pk0,longitud=a.length,cerrado=a.closed,glorieta=a.roundabout) for i,a in enumerate(result.axes)]
-    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[192,192,192],vertex_rgb=[0,0,250],tablas=TABLE_FORMAT,anotaciones_curvas=ANNOTATION_FORMAT),indent=2),encoding='utf-8')
+    (out/'Configuracion.json').write_text(json.dumps(dict(escala=scale,**profile,transition_short=transition_short,transition_long=transition_long,radial_arrow=.75,center_mark=2.5,annotation_rgb=[0,0,0],vertex_rgb=[0,0,250],tablas=TABLE_FORMAT,anotaciones_curvas=ANNOTATION_FORMAT),indent=2),encoding='utf-8')
     (out/'Ejes.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
     summary=dict(ejes=len(result.axes),curvas=len(result.curves),vertices=len(result.groups['VÉRTICES']),tangencias=len(result.groups['TANGENTES']),incidencias=len(result.warnings))
-    (out/'Revision.txt').write_text('REPLANTEA 0.5 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente. Glorietas: clasificación manual documentada en Ejes.json; no generan V ni líneas auxiliares a PI. Los V propios de los accesos se conservan. Tablas ARIAL 2; filas 4; columnas 10/19.2289/19.2289; anclaje X/Y medio centro a 9.1366 derecha y 2.0211 abajo de la esquina de su celda. Identificadores azules; coordenadas y rejilla negras. Centros con círculo azul R1 y MTEXT ARIAL 1.75 con fondo RGB 250,250,250 y factor 1.0001. Ángulo interior en gon con 4 decimales como DIMENSION; directrices MULTILEADER TE/TS hacia puntos medios de PI–tangencias. No se generan ángulos ni directrices de PI en glorietas.\n',encoding='utf-8')
+    (out/'Revision.txt').write_text('REPLANTEA 0.7 — PRUEBA PARA REVISIÓN\n'+json.dumps(summary,ensure_ascii=False,indent=2)+'\n\n'+ '\n'.join(result.warnings)+'\n\nNumeración según orden de ejes y sentido de recorrido. Perfil de escala en Configuracion.json. Sin ajuste de coordenadas ni radios. Ejes fuente conservados. Coordenadas en dibujo: 3 decimales; CSV: 6. PK independientes por entidad, origen 0 salvo configuración. Ejes sin nombre: E01… Revisión de continuidad y sentido pendiente. No se crean bases BR ni cotas Z. Salida exclusivamente XY. Numeración de curvas independiente de V; la relación está en Curvas.csv. Los textos CAD son editables. Uniones y cierres no se reparan automáticamente. Glorietas: clasificación manual documentada en Ejes.json; no generan V ni líneas auxiliares a PI. Los V propios de los accesos se conservan. Tablas ARIAL 2; filas 4; columnas 10/19.2289/19.2289; anclaje X/Y medio centro a 9.1366 derecha y 2.0211 abajo de la esquina de su celda. Identificadores azules; coordenadas y rejilla negras. Centros con círculo azul R1 y MTEXT ARIAL 1.75 con fondo RGB 250,250,250 y factor 1.0001. Ángulo interior en gon con 4 decimales como DIMENSION; directrices MULTILEADER TE/TS hacia puntos medios de PI–tangencias. No se generan ángulos ni directrices de PI en glorietas.\n',encoding='utf-8')
     return dest,summary
 
 def label_layout(result,h=1.5,profile=None):

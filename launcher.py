@@ -1,7 +1,7 @@
 """Punto de entrada para Replantea.exe y su comprobación integrada."""
 from pathlib import Path
 import argparse,json,logging,os,sys,traceback
-VERSION='0.6.0'
+VERSION='0.7.0'
 
 def main():
     parser=argparse.ArgumentParser()

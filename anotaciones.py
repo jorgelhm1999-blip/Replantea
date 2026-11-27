@@ -4,7 +4,7 @@ from ezdxf.math import Vec2
 from ezdxf.render.mleader import HorizontalConnection,LeaderType
 
 BLUE=0x0000FA
-FORMAT=dict(center_radius=1.,center_text_height=1.75,background_rgb=[250,250,250],background_scale=1.0001,
+FORMAT=dict(center_radius=1.,center_text_height=1.75,background_rgb=[255,255,255],background_scale=1.0001,
     angular_arrow=.75,angular_arrow_type='ARCHTICK',angular_extension=1.25,angular_offset=.625,angular_text_height=1.5,angular_units='gon',angular_decimals=4,
     leader_type='straight',leader_arrow='NONE',leader_landing=True,leader_dogleg=.5,leader_gap=.5,leader_extend_to_text=True,leader_text_height=1.5,leader_attachment=6,leader_text_frame=False)
 
@@ -33,7 +33,10 @@ def add_center_label(modelspace,label,point,insert):
     modelspace.add_circle(point,1.,dxfattribs=attrs)
     modelspace.add_point(point,dxfattribs=attrs)
     text=modelspace.add_mtext(label,dxfattribs={**attrs,'insert':insert,'style':'ARIAL','char_height':1.75,'attachment_point':4})
-    text.set_bg_color((250,250,250),scale=1.0001,text_frame=False)
+    text.set_bg_color((255,255,255),scale=1.0001,text_frame=False)
+    text.dxf.width=1.75
+    text.dxf.line_spacing_style=2
+    text.dxf.line_spacing_factor=2.9167/(1.75*5/3)
     return text
 
 
@@ -59,7 +62,7 @@ def add_tangent_annotations(doc,modelspace,curve):
     dim.render()
     for entity in doc.blocks[dim.dimension.dxf.geometry]:
         if entity.dxf.is_supported('true_color'):entity.dxf.color=7;entity.dxf.true_color=0;entity.dxf.layer='RP_ANGULOS'
-        if entity.dxftype()=='MTEXT':entity.set_bg_color((250,250,250),scale=1.0001)
+        if entity.dxftype()=='MTEXT':entity.set_bg_color((255,255,255),scale=1.0001)
     # Cada directriz apunta exactamente al punto medio del segmento PI–tangencia.
     center=Vec2(curve['center'])
     for index,(prefix,endpoint) in enumerate([('TE',curve['s'].a),('TS',curve['s'].b)]):

@@ -29,7 +29,7 @@ class OrderAndStyleTests(unittest.TestCase):
                 self.assertFalse(z.audit().errors)
                 self.assertEqual(list(z.entitydb[source.dxf.handle].get_points('xyb')),list(source.get_points('xyb')))
                 texts=list(z.modelspace().query('TEXT[layer=="RP_PK"]'))
-                self.assertEqual([e.dxf.text for e in texts],['0+000.000'])
+                self.assertEqual([e.dxf.text for e in texts],['0+000.000','0+040.000'])
                 for e in texts:self.assertEqual(e.dxf.height,p['pk_height']);self.assertEqual(e.dxf.style,'ARIAL')
                 ticks=list(z.modelspace().query('LINE[layer=="RP_PK"]'))
                 self.assertGreater(len(ticks),len(texts))
@@ -37,17 +37,17 @@ class OrderAndStyleTests(unittest.TestCase):
                 self.assertFalse(list(z.modelspace().query('TEXT[layer=="RP_ELEMENTOS"]')))
                 self.assertFalse(list(z.modelspace().query('LINE[layer=="RP_CENTROS"]')))
                 center=result_center=Result(axes,w).curves[0]['center']
-                center_label=next(iter(z.modelspace().query('MTEXT[layer=="RP_CENTROS"]')))
+                center_label=next(iter(z.modelspace().query('MTEXT[layer=="RP_CENTROS_TXT"]')))
                 self.assertLess(dist(center_label.dxf.insert,center),p['geometry_height']*2)
                 for e in z.modelspace().query('TEXT'):
                     if e.dxf.layer.startswith('RP_'):self.assertEqual(e.dxf.style,'ARIAL')
-                for e in z.modelspace().query('TEXT[layer=="RP_VERTICES"]'):
-                    self.assertEqual(e.dxf.height,p['vertex_height']);self.assertEqual(e.dxf.style,'ARIAL')
+                for e in z.modelspace().query('MTEXT[layer=="RP_VERTICES_TXT"]'):
+                    self.assertEqual(e.dxf.char_height,1.75);self.assertEqual(e.dxf.style,'ARIAL')
+                from formato_cad import LAYERS
                 for e in z.modelspace():
-                    if e.dxf.layer.startswith('RP_'):
-                        if e.dxf.layer in ('RP_TABLAS','RP_ANGULOS','RP_TANGENTES'):continue
-                        self.assertEqual(e.dxf.true_color,VERTEX_RGB if e.dxf.layer in ('RP_VERTICES','RP_CENTROS') else GRAY_RGB)
-                        self.assertEqual(e.dxf.color,5 if e.dxf.layer in ('RP_VERTICES','RP_CENTROS') else 9)
+                    if e.dxf.layer in LAYERS:
+                        self.assertEqual(e.dxf.color,256);self.assertFalse(e.dxf.hasattr('true_color'))
+                        self.assertEqual(z.layers.get(e.dxf.layer).rgb,LAYERS[e.dxf.layer])
                 dims=list(z.modelspace().query('DIMENSION[layer=="RP_RADIOS"]'));self.assertEqual(len(dims),1)
                 e=dims[0];self.assertEqual(e.dxf.dimtype&7,4);self.assertAlmostEqual(e.get_measurement(),10)
                 style=z.dimstyles.get(e.dxf.dimstyle);self.assertEqual(style.dxf.dimasz,.75);self.assertEqual(style.dxf.dimcen,2.5)
@@ -55,7 +55,7 @@ class OrderAndStyleTests(unittest.TestCase):
                 overrides=e.override();self.assertEqual(overrides.get('dimblk',''),'');self.assertEqual(overrides.get('dimasz'),.75)
                 block=z.blocks[e.dxf.geometry];self.assertTrue(any(x.dxftype()=='INSERT' and 'CLOSEDFILLED' in x.dxf.name.upper() for x in block))
                 for entity in block:
-                    if entity.dxf.is_supported('true_color'):self.assertEqual(entity.dxf.true_color,GRAY_RGB)
+                    if entity.dxf.is_supported('true_color'):self.assertEqual(entity.dxf.color,256);self.assertFalse(entity.dxf.hasattr('true_color'))
                 config=json.loads((temp/'out'/'Configuracion.json').read_text());self.assertEqual(config['escala'],scale)
 
 class RevisionTests(unittest.TestCase):
@@ -94,9 +94,10 @@ class RevisionTests(unittest.TestCase):
                 out,_=export(ezdxf.new('R2010'),Result([a],[]),tmp,scale='1:1000');z=ezdxf.readfile(out)
                 lines=list(z.modelspace().query('LINE[layer=="RP_TRANSICIONES"]'));self.assertEqual(len(lines),2)
                 for e in lines:self.assertAlmostEqual(e.dxf.start.distance(e.dxf.end),36.146)
-                texts=list(z.modelspace().query('TEXT[layer=="RP_TRANSICIONES"]'));self.assertEqual(len(texts),6)
+                texts=list(z.modelspace().query('TEXT[layer=="RP_TRANSICIONES"]'));self.assertEqual(len(texts),4)
                 for i,mark in enumerate(marks):
-                    before,after,pk=texts[i*3:i*3+3]
+                    before,after=texts[i*2:i*2+2]
+                    pk=next(t for t in z.modelspace().query('TEXT[layer=="RP_PK"]') if t.dxf.text==format_pk(mark['pk']) and abs(t.dxf.rotation-readable_angle(mark['normal']))<1e-6)
                     self.assertEqual(before.dxf.text,mark['before']);self.assertEqual(after.dxf.text,mark['after']);self.assertEqual(pk.dxf.text,format_pk(mark['pk']))
                     for e in [before,after,pk]:self.assertEqual(e.dxf.height,2);self.assertEqual(e.dxf.style,'ARIAL');self.assertAlmostEqual(e.dxf.rotation,readable_angle(mark['normal']))
                     # Punto real de alineación, a cada lado según avance del eje.
