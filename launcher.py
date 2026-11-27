@@ -1,7 +1,7 @@
 """Punto de entrada para Replantea.exe y su comprobación integrada."""
 from pathlib import Path
 import argparse,json,logging,os,sys,traceback
-VERSION='0.5.0'
+VERSION='0.6.0'
 
 def main():
     parser=argparse.ArgumentParser()
@@ -20,9 +20,16 @@ def main():
         except Exception:
             Path(args.report).write_text(json.dumps(dict(status='error',traceback=traceback.format_exc()),ensure_ascii=False,indent=2),encoding='utf-8')
             return 1
-    from interfaz import App
     import tkinter as tk
-    root=tk.Tk();app=App(root);root.title(f'Replantea {VERSION}');root.mainloop()
+    from marca import windows_identity,apply_icon
+    windows_identity()
+    root=tk.Tk();root.withdraw();apply_icon(root)
+    def open_main():
+        from interfaz import App
+        root.app=App(root);root.title(f'Replantea {VERSION}');root.deiconify();root.lift()
+    from splash import Splash
+    root.splash=Splash(root,open_main)
+    root.mainloop()
     return 0
 
 if __name__=='__main__':

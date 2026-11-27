@@ -1,4 +1,4 @@
-REPLANTEA 0.5.0 — WINDOWS x64
+REPLANTEA 0.6.0 — WINDOWS x64
 
 El paquete generado por GitHub Actions contiene Replantea.exe.
 Descomprima la descarga completa en una carpeta local y abra Replantea.exe.
@@ -77,3 +77,8 @@ Las coordenadas del cuadro CAD se muestran a tres decimales; los CSV conservan m
 
 Si hubiera un fallo de inicio, el registro está en:
 %LOCALAPPDATA%\Replantea\replantea.log
+
+INICIO E INTERFAZ
+Introducción de 12,5 s al arrancar; Abrir ahora o Escape permiten saltarla.
+Incidencias ocultas por defecto; Mostrar incidencias despliega el panel.
+Icono propio: eje bajo una lupa, en la ventana, ejecutable y cabecera.

@@ -124,6 +124,32 @@ def run(gui=False,require_frozen=False):
                 app.centers.set(True);app.draw();root.update()
                 center_items=[item for item,key in app.text_items.items() if key.startswith('C')]
                 assert center_items and app.canvas.itemcget(center_items[0],'fill')=='#0000fa'
+                assert not app.issues_visible and not app.issues_panel.winfo_ismapped()
+                saved_log=app.log.get('1.0','end')
+                app.toggle_issues();root.update()
+                assert app.issues_visible and app.issues_panel.winfo_ismapped()
+                app.toggle_issues();root.update()
+                assert not app.issues_visible and not app.issues_panel.winfo_ismapped()
+                assert app.log.get('1.0','end')==saved_log
+                assert root._replantea_icons and app.brand_icon
+                from splash import Splash
+                delivered=[]
+                preview=Splash(root,lambda:delivered.append(True))
+                preview.tick();root.update()
+                assert preview.photo is not None
+                preview.start-=13;preview.tick();root.update()
+                assert preview.done and delivered==[True] and not preview.window.winfo_exists()
+                preview.finish();assert delivered==[True]
+                # Comprobar también el acceso anticipado antes de terminar la introducción.
+                preview=Splash(root,lambda:delivered.append(True));preview.skip.invoke();root.update()
+                assert preview.done and len(delivered)==2 and preview.job is None
+                from PIL import ImageGrab
+                root.geometry(f'{min(1380,root.winfo_screenwidth()-30)}x{min(850,root.winfo_screenheight()-80)}+10+10')
+                root.update()
+                ImageGrab.grab().save('ui-preview.png')
+                if require_frozen and sys.platform=='win32':
+                    import ctypes
+                    assert ctypes.windll.shell32.ExtractIconExW(sys.executable,-1,None,None,0)>0
                 gui_ok=True
             finally:root.destroy()
-        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',center_mtext='ok',angular_dimensions='ok',tangent_multileaders='ok',ezdxf=ezdxf.__version__,summary=summary)
+        return dict(frozen=bool(getattr(sys,'frozen',False)),dxf_reader='ok',dwg_reader='ok',export='ok',gui=gui_ok,axis_order='ok',drag_reorder='ok' if gui_ok else 'not_run',direction_arrow='ok' if gui_ok else 'not_run',transition_marks='ok',scale_profiles='ok',radial_dimensions='ok',roundabouts='ok',roundabout_controls='ok' if gui_ok else 'not_run',coordinate_tables='ok',startup_animation='ok' if gui_ok else 'not_run',issues_panel='ok' if gui_ok else 'not_run',app_icon='ok' if gui_ok else 'not_run',center_mtext='ok',angular_dimensions='ok',tangent_multileaders='ok',ezdxf=ezdxf.__version__,summary=summary)

@@ -74,6 +74,7 @@ jobs:
           name: Replantea-diagnostico
           path: |
             *selftest.json
+            ui-preview.png
             build/Replantea/warn-Replantea.txt
           if-no-files-found: ignore
           retention-days: 7

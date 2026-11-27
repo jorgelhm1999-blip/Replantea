@@ -44,3 +44,7 @@ py -3.12 -m venv .venv
 ```
 
 El repositorio contiene exclusivamente código y un DWG sintético de prueba. No contiene planos reales ni coordenadas de proyectos.
+
+## Interfaz e inicio (0.6.0)
+
+Introducción aprobada de 12,5 segundos al iniciar, con Abrir ahora o Escape para acceder directamente. Interfaz con cabecera azul marino, acciones en azul petróleo y filas alternas. Se retira la línea informativa de alturas; las incidencias se conservan en un panel oculto que se abre con Mostrar incidencias. Icono propio de eje bajo una lupa en el ejecutable Windows, título, barra de tareas y cabecera superior derecha.
